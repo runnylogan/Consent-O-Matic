@@ -1,5 +1,6 @@
 import GDPRConfig from './GDPRConfig.js';
 import Language from './Language.js';
+import { buildBackup, applyBackup, listSnapshots, getRemote, setRemote, pushRemote, pushGist, restoreRemote, getRemoteStatus, getGistStatus } from './Backup.js';
 
 let optionsUL = document.querySelector(".configurator ul.categorylist");
 if (optionsUL){
@@ -47,10 +48,14 @@ if (optionsUL){
             hideOrPipRadioGroup.value = "pip";
         }
 
+        const discoveryInput = document.querySelector("#discoveryEnabled");
+        discoveryInput.checked = generalSettings.discoveryEnabled !== false;
+
         function saveGeneralSettings() {
-            const newGeneralSettings = {
-                hideInsteadOfPIP: hideOrPipRadioGroup.value === "hide"
-            };
+            const newGeneralSettings = Object.assign({}, generalSettings, {
+                hideInsteadOfPIP: hideOrPipRadioGroup.value === "hide",
+                discoveryEnabled: discoveryInput.checked
+            });
 
             GDPRConfig.setGeneralSettings(newGeneralSettings);
         }
@@ -193,6 +198,145 @@ if (optionsUL){
     document.querySelector("#forceupdate").addEventListener("click", () => {
         GDPRConfig.clearRuleCache();
     });
+
+    // ---- Backup & restore ----
+    const backupStatus = document.querySelector("#backupStatus");
+    function setBackupStatus(text, ok = true) {
+        backupStatus.textContent = text;
+        backupStatus.classList.toggle("error", !ok);
+    }
+
+    async function renderSnapshots() {
+        const list = document.querySelector("#snapshotList");
+        list.innerHTML = "";
+        const snaps = await listSnapshots();
+        if (snaps.length === 0) {
+            const li = document.createElement("li");
+            li.className = "empty";
+            li.textContent = "No snapshots yet. One is taken each time your custom rules change.";
+            list.appendChild(li);
+            return;
+        }
+        snaps.forEach((snap) => {
+            const li = document.createElement("li");
+            const label = document.createElement("span");
+            label.textContent = new Date(snap.id).toLocaleString("en-GB") + " · " + snap.ruleCount + " rule" + (snap.ruleCount === 1 ? "" : "s");
+            const btn = document.createElement("button");
+            btn.textContent = "Restore";
+            btn.className = "ghost";
+            btn.addEventListener("click", async () => {
+                try {
+                    const n = await applyBackup(snap.backup, document.querySelector("#backupReplace").checked ? "replace" : "merge");
+                    setBackupStatus("Restored " + n + " rule" + (n === 1 ? "" : "s") + " from snapshot.");
+                    renderSnapshots();
+                } catch (e) { setBackupStatus("Restore failed: " + e.message, false); }
+            });
+            li.append(label, btn);
+            list.appendChild(li);
+        });
+    }
+
+    document.querySelector("#backupExport").addEventListener("click", async () => {
+        const backup = await buildBackup();
+        const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "consent-o-matic-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+        setBackupStatus("Exported " + Object.keys(backup.customRuleLists).length + " custom rule(s).");
+    });
+
+    document.querySelector("#backupFile").addEventListener("change", async (evt) => {
+        const file = evt.target.files[0];
+        evt.target.value = "";
+        if (!file) return;
+        try {
+            const obj = JSON.parse(await file.text());
+            const n = await applyBackup(obj, document.querySelector("#backupReplace").checked ? "replace" : "merge");
+            setBackupStatus("Restored " + n + " rule" + (n === 1 ? "" : "s") + " from " + file.name + ".");
+            renderSnapshots();
+        } catch (e) {
+            setBackupStatus("Restore failed: " + e.message, false);
+        }
+    });
+
+    renderSnapshots();
+
+    // ---- Online backup settings ----
+    const remoteStatus = document.querySelector("#remoteStatus");
+    function setRemoteStatus(text, ok = true) {
+        remoteStatus.textContent = text;
+        remoteStatus.classList.toggle("error", !ok);
+    }
+    const field = (id) => document.querySelector("#" + id);
+    let hasToken = false;
+
+    async function loadRemote() {
+        const cfg = await getRemote();
+        field("remoteRepo").value = cfg.repo;
+        field("remoteBranch").value = cfg.branch;
+        field("remoteDir").value = cfg.dir;
+        field("remoteEnabled").checked = cfg.enabled;
+        hasToken = Boolean(cfg.token);
+        field("remoteToken").placeholder = hasToken ? "Saved (leave blank to keep)" : "github_pat_…";
+        field("gistId").value = cfg.gistId;
+        field("gistFile").value = cfg.gistFile;
+        field("gistEnabled").checked = cfg.gistEnabled;
+        field("gistToken").placeholder = cfg.gistToken ? "Saved (leave blank to keep)" : "github_pat_…";
+        const gstat = await getGistStatus();
+        const gEl = document.querySelector("#gistStatus");
+        gEl.textContent = gstat ? (gstat.ok ? "Gist: " : "Gist failed: ") + gstat.message + " · " + new Date(gstat.time).toLocaleString("en-GB") : "";
+        gEl.classList.toggle("error", Boolean(gstat && !gstat.ok));
+        const status = await getRemoteStatus();
+        if (status) setRemoteStatus((status.ok ? "Last backup: " : "Last attempt failed: ") + status.message + " · " + new Date(status.time).toLocaleString("en-GB"), status.ok);
+    }
+
+    async function saveRemote() {
+        const update = {
+            repo: field("remoteRepo").value,
+            branch: field("remoteBranch").value,
+            dir: field("remoteDir").value,
+            enabled: field("remoteEnabled").checked
+        };
+        if (field("remoteToken").value) update.token = field("remoteToken").value.trim();
+        Object.assign(update, { gistId: field("gistId").value, gistFile: field("gistFile").value, gistEnabled: field("gistEnabled").checked });
+        if (field("gistToken").value) update.gistToken = field("gistToken").value.trim();
+        await setRemote(update);
+        field("remoteToken").value = "";
+        field("gistToken").value = "";
+        await loadRemote();
+    }
+
+    field("remoteForm").addEventListener("submit", async (evt) => {
+        evt.preventDefault();
+        try { await saveRemote(); setRemoteStatus("Saved."); } catch (e) { setRemoteStatus(e.message, false); }
+    });
+    field("remotePush").addEventListener("click", async () => {
+        try {
+            await saveRemote();
+            setRemoteStatus("Backing up…");
+            const errors = [];
+            const results = [];
+            for (const push of [pushRemote, pushGist]) {
+                try { results.push(await push({ force: true })); } catch (e) { errors.push(e.message); results.push("failed"); }
+            }
+            await loadRemote();
+            if (errors.length) setRemoteStatus(errors.join(" · "), false);
+            else if (results.every((r) => r === "skipped")) setRemoteStatus("Nothing to back up: enable a target, fill in its details, and have at least one custom rule.", false);
+        } catch (e) { setRemoteStatus(e.message, false); }
+    });
+    field("remoteRestore").addEventListener("click", async () => {
+        try {
+            await saveRemote();
+            setRemoteStatus("Restoring…");
+            const n = await restoreRemote(field("backupReplace").checked ? "replace" : "merge");
+            setBackupStatus("Restored " + n + " rule" + (n === 1 ? "" : "s") + " from the repository.");
+            setRemoteStatus("Restored " + n + " rule" + (n === 1 ? "" : "s") + " from the repository.");
+            renderSnapshots();
+        } catch (e) { setRemoteStatus(e.message, false); }
+    });
+    loadRemote();
 
     function tabChanged(target) {
         let oldTab = document.querySelector(".header .menuitem[tabindex='0']");

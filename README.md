@@ -665,3 +665,13 @@ Putting it all together, here is a full example of a CMP "MyCMP" that has 2 cons
    }
 }
 ```
+
+
+## Fork additions
+
+- **Unknown-banner discovery** (`Extension/Discovery.js`, `DiscoveryRunner.js`, `DiscoveryUI.js`): when no rule matches a page, a heuristic pass looks for a cookie banner, classifies its buttons and toggles, and generates a rule in the normal rule format. The rule is dry-run with the real engine classes, shown for review, and saved to your local custom rules only when you approve it. If the heuristics cannot produce a working rule, a guided teach mode lets you click the elements instead (also available from the popup: *Teach this site*). Disable under Display.
+- **Backup and restore** (`Extension/Backup.js`): custom rules are snapshotted inside the extension on every change (last 10). Optionally they are pushed to a GitHub repository, one commit per change, so the repository history is the dated backup trail. Two files are written: `backup.json` (rules and settings) and `custom-rules.json` (rules only, usable as a rule-list URL). Use a private repository: rule names contain hostnames. The fine-grained token needs *Contents: read and write* on that one repository and is stored only in the browser profile, never in a backup. An empty ruleset is never pushed. Optionally the rules-only file is also published to a gist, as a rule-list URL: it is merged into the gist (existing rules are kept, local rules win on a name clash, and an unreadable gist is never overwritten); that token needs the account-wide *Gists* permission, so keep it separate. On a new install, enter the repository and token under Rule Lists and press *Restore from repository*, or restore from an exported file.
+- **Separate identity**: add-on ID `consent-o-matic-fork@runnylogan`, name "Consent-O-Matic (Fork)", so it installs alongside (not over) upstream.
+- **Visual refresh**: new icon, light/dark theme, restyled popup, options page and in-page progress card.
+
+Run the tests with `npm test`.

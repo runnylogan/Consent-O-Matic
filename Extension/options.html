@@ -82,6 +82,10 @@
 			</div>
                     </form>
                 </li>
+                <li class="discoverySetting">
+                    <div>Detect cookie banners that have no rule yet, and offer to create one for you to review.</div>
+                    <label class="checkrow" for="discoveryEnabled"><input type="checkbox" id="discoveryEnabled"> Detect unknown banners</label>
+                </li>
             </ul>
         </div>
         <div class="tab tab_rl" style="display:none" id="rulesListTab" role="tabpanel" tabindex="0">
@@ -104,6 +108,45 @@
                 <p>
                     <button id="rulesEditor">[[OPEN_RULE_GENERATOR]]</button>
                 </p>
+                <br />
+                <h2>Backup &amp; restore</h2>
+                <p>
+                    Custom rules are snapshotted inside the extension on every change (last 10), and can also be pushed to a
+                    GitHub repository, one commit per change, so the repository history is your dated backup trail. The push
+                    writes <code>backup.json</code> (rules and settings, for restoring) and <code>custom-rules.json</code>
+                    (rules only, usable as a rule-list URL). Rule names include site hostnames, so use a private repository.
+                    The token needs <em>Contents: read and write</em> on that one repository and is kept only in this browser profile.
+                </p>
+                <form id="remoteForm" class="remoteform" autocomplete="off">
+                    <label>Repository <input id="remoteRepo" type="text" placeholder="owner/name" spellcheck="false"></label>
+                    <label>Branch <input id="remoteBranch" type="text" placeholder="main" spellcheck="false"></label>
+                    <label>Folder <input id="remoteDir" type="text" placeholder="consent-o-matic" spellcheck="false"></label>
+                    <label>Access token <input id="remoteToken" type="password" placeholder="github_pat_…" spellcheck="false"></label>
+                    <p class="checkrow"><input type="checkbox" id="remoteEnabled"><label for="remoteEnabled">Push automatically when rules change</label></p>
+                    <h3 class="formsection">Rule-list gist (optional)</h3>
+                    <label>Gist URL or ID <input id="gistId" type="text" placeholder="https://gist.github.com/…" spellcheck="false"></label>
+                    <label>File name <input id="gistFile" type="text" placeholder="custom-rules.json" spellcheck="false"></label>
+                    <label>Gist token <input id="gistToken" type="password" placeholder="github_pat_…" spellcheck="false"></label>
+                    <p class="checkrow"><input type="checkbox" id="gistEnabled"><label for="gistEnabled">Publish rules to this gist, merged in: rules already there are kept</label></p>
+                    <p class="hint">Gives you a rule-list URL other browsers can use. The token needs the <em>Gists</em> account permission (write), which covers all your gists, so keep it separate from the repository token.</p>
+                    <div class="backupactions">
+                        <button type="submit" id="remoteSave">Save</button>
+                        <button type="button" id="remotePush" class="ghost">Back up now</button>
+                        <button type="button" id="remoteRestore" class="ghost">Restore from repository</button>
+                    </div>
+                </form>
+                <p id="remoteStatus" class="status" role="status" aria-live="polite"></p>
+                <p id="gistStatus" class="status" role="status" aria-live="polite"></p>
+                <h3>Files</h3>
+                <p class="backupactions">
+                    <button id="backupExport">Export backup now</button>
+                    <label class="filebutton" for="backupFile">Restore from file…</label>
+                    <input type="file" id="backupFile" accept="application/json,.json" hidden>
+                </p>
+                <p class="checkrow"><input type="checkbox" id="backupReplace"><label for="backupReplace">Replace existing rules instead of merging</label></p>
+                <p id="backupStatus" class="status" role="status" aria-live="polite"></p>
+                <h3>Local history</h3>
+                <ul class="snapshotlist" id="snapshotList"></ul>
 
             </div>
         </div>

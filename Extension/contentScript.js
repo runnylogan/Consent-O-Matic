@@ -1,5 +1,6 @@
 import GDPRConfig from "./GDPRConfig.js";
 import ConsentEngine from "./ConsentEngine.js";
+import { runDiscovery, startTeach } from "./DiscoveryRunner.js";
 
 async function contentScriptRunner() {
     if (document.contentType!=="text/html") return;
@@ -46,7 +47,7 @@ async function contentScriptRunner() {
                                     ConsentEngine.topFrameUrl = url;
             
                                     chrome.runtime.sendMessage("Searching");
-                                    let engine = new ConsentEngine(config, consentTypes, (evt)=>{
+                                    const handledCallback = (evt)=>{
                                         let result = {
                                             "handled": evt.handled
                                         };
@@ -61,10 +62,31 @@ async function contentScriptRunner() {
                                             chrome.runtime.sendMessage("CMPError");
                                         } else {
                                             chrome.runtime.sendMessage("NothingFound");
+                                            // Only when the engine never recognised anything: a known CMP that is slow or not
+                                            // showing also ends up here, and must not trigger discovery.
+                                            const engineSawCMP = ConsentEngine.singleton && ConsentEngine.singleton.triedCMPs.size > 0;
+                                            if (window === window.parent && !engineSawCMP) {
+                                                runDiscovery({
+                                                    host: urlObj.hostname,
+                                                    consentTypes,
+                                                    generalSettings,
+                                                    onHandled: handledCallback
+                                                }).catch((e) => console.error("Discovery failed:", e));
+                                            }
                                         }
-                                    });
+                                    };
+                                    let engine = new ConsentEngine(config, consentTypes, handledCallback);
             
                                     ConsentEngine.singleton = engine;
+
+                                    if (window === window.parent) {
+                                        chrome.runtime.onMessage.addListener((message) => {
+                                            if (message === "StartTeach") {
+                                                startTeach({ host: urlObj.hostname, consentTypes, generalSettings, onHandled: handledCallback })
+                                                    .catch((e) => console.error("Teach mode failed:", e));
+                                            }
+                                        });
+                                    }
             
                                     if(debugValues.debugLog) {
                                         console.log("ConsentEngine loaded " + engine.cmps.length + " of " + Object.keys(config).length + " rules");

@@ -2,31 +2,24 @@
     opacity: 0 !important;
 }
 
+// Everything below is the in-page progress card shown while a banner is being handled.
 .ConsentOMatic-Progress-Dialog-Modal {
     position: fixed;
     bottom: 0;
     right: 0;
-    background: linear-gradient(170deg, rgb(0,51,153), transparent);
     z-index: 2147483646;
-    transition: opacity 1s ease-in-out;
-    animation: consentomatic-modalAnimation 0.5s ease-in-out;
+    transition: opacity .6s ease-in-out;
+    animation: consentomatic-modalAnimation .35s ease-out;
 
     &.ConsentOMatic-Progress-Complete {
         opacity: 0;
     }
 }
 
-@keyframes consentomatic-progressAnimation {
-    from {
-        background-position: 90% 50%;
-    }
-    to {
-        background-position: 0% 50%;
-    }
-}
 @keyframes consentomatic-modalAnimation {
     from {
         opacity: 0;
+        transform: translateY(12px);
     }
 }
 
@@ -34,14 +27,14 @@
     position: absolute;
     width: calc(min(25vw, 20rem));
     height: 12rem;
-    background: rgba(0,48,154,0.2);
+    background: rgba(79, 70, 229, 0.12);
+    backdrop-filter: blur(6px);
     box-sizing: border-box;
-    bottom: calc(4rem);
-    right: 0;
-    border-left: 1px solid #00008b12;
-    border-top: 1px solid #00008b12;
-    border-right: 1px solid #00008b12;
-    transition: transform 0.3s ease-out;
+    bottom: 4.75rem;
+    right: 1rem;
+    border: 1px solid rgba(79, 70, 229, 0.25);
+    border-radius: 14px;
+    transition: transform .3s ease-out;
     transform-origin: center bottom;
     transform: scaleY(0);
 }
@@ -54,84 +47,71 @@
 
 .ConsentOMatic-Progress-Dialog {
     position: absolute;
-    right: 0;
+    right: 1rem;
     bottom: 1rem;
     width: calc(min(25vw, 20rem));
-    height: 3rem;
-    font-size: 1rem;
-    border: 0;
-    box-shadow: 0 0 3rem rgba(47, 51, 70, 0.637);
-    background: #00309a;
-    background: linear-gradient(to right, rgba(0,0,0,1) 0%, rgba(0,48,154,1) 40%,rgba(0,22,91,1) 60%);
-    background-size: 400% 400%;
-    display: flex;
+    min-width: 15rem;
+    height: 3.25rem;
     box-sizing: border-box;
+    display: flex;
     flex-direction: row;
-    justify-content: left;
     align-items: center;
     overflow: hidden;
-    padding: 0.5rem;
+    padding: .5rem .85rem .5rem .6rem;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 14px;
+    background: linear-gradient(135deg, #3b3fd6 0%, #5b3df0 55%, #7c3aed 100%);
+    box-shadow: 0 10px 30px rgba(30, 27, 90, .45);
     opacity: 0;
-    -ms-user-select: none;
-    -webkit-user-select: none;
     user-select: none;
-    animation-name: consentomatic-progressAnimation;
-    animation-duration: 5s;
-    animation-delay: -1s;
-    animation-direction: alternate;
-    animation-iteration-count: infinite;
-    animation-fill-mode: both;
-    transition: opacity 1s ease-in-out;
+    -webkit-user-select: none;
+    transition: opacity .4s ease-in-out;
     z-index: 2;
 
     &:before {
         content: "";
-        width: 2rem;
-        height: 2rem;
-        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' xml:space='preserve' viewBox='0 0 1522 1522'%3E%3Ccircle cx='760.8' cy='760.8' r='727.3' fill='%2311378F'/%3E%3Cpath fill='%23FDD70A' d='m761 74 28 58 64 9-46 45 11 63-57-30-57 30 11-63-46-45 63-9zM1053 153l29 58 63 9-46 45 11 63-57-30-57 30 11-63-46-45 64-9zM1274 362l28 58 64 9-46 45 11 63-57-30-57 30 10-63-46-45 64-9zM1360 673l28 58 64 9-46 45 11 63-57-29-57 29 11-63-46-45 63-9zM1262 958l28 58 64 9-46 45 11 64-57-30-57 30 11-64-46-45 63-9zM1065 1167l28 58 64 9-46 45 11 63-57-30-57 30 11-63-46-45 63-9zM761 1272l28 58 64 9-46 45 11 63-57-29-57 29 11-63-46-45 63-9zM457 1167l28 58 64 9-46 45 11 63-57-30-57 30 11-63-46-45 63-9zM260 958l28 58 64 9-46 45 11 64-57-30-57 30 11-64-46-45 63-9zM162 673l28 58 64 9-46 45 11 63-57-29-57 29 11-63-46-45 63-9zM248 362l29 58 63 9-46 45 11 63-57-30-57 30 11-63-46-45 64-9zM468 153l29 58 63 9-46 45 11 63-57-30-57 30 11-63-46-45 64-9z'/%3E%3Cpath fill='%23FFF' d='M915 730v-79a153 153 0 0 0-307 0v79h-29v282h364V730h-28zm-51 32-40 61c-22 35-40 73-56 111l-16 45c-2 5-6 7-10 8-7 1-14 0-21-2-4-1-7-4-9-8l-27-52c-8-14-16-26-26-37-4-5-4-9 1-11 9-5 19-5 28-2l7 5a241 241 0 0 1 33 49h1l6-12c21-51 47-98 78-144l11-15c3-5 7-7 12-8 8-1 15-1 23 2l3 1c4 2 5 5 2 9zm6-111v79H653v-79a109 109 0 1 1 217 0z'/%3E%3C/svg%3E");
-        background-size: contain;
-        background-repeat: no-repeat;
-        background-position: center center;
-        margin-right: 0.5rem;
+        flex: none;
+        width: 2.1rem;
+        height: 2.1rem;
+        background: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 128 128%22 role=%22img%22 aria-label=%22Consent-O-Matic%22%3E%3Cdefs%3E%3ClinearGradient id=%22bg%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22%3E%3Cstop offset=%220%22 stop-color=%22%235b6cff%22/%3E%3Cstop offset=%221%22 stop-color=%22%237c3aed%22/%3E%3C/linearGradient%3E%3Cmask id=%22bite%22%3E%3Crect width=%22128%22 height=%22128%22 fill=%22%23fff%22/%3E%3Ccircle cx=%2284%22 cy=%2240%22 r=%2215%22 fill=%22%23000%22/%3E%3C/mask%3E%3C/defs%3E%3Crect width=%22128%22 height=%22128%22 rx=%2230%22 fill=%22url%28%23bg%29%22/%3E%3Cg mask=%22url%28%23bite%29%22%3E%3Ccircle cx=%2262%22 cy=%2264%22 r=%2238%22 fill=%22%23fff%22/%3E%3C/g%3E%3Cg fill=%22%235b6cff%22 opacity=%22.4%22%3E%3Ccircle cx=%2248%22 cy=%2252%22 r=%225%22/%3E%3Ccircle cx=%2268%22 cy=%2270%22 r=%225.5%22/%3E%3Ccircle cx=%2246%22 cy=%2278%22 r=%224.5%22/%3E%3Ccircle cx=%2272%22 cy=%2250%22 r=%223.5%22/%3E%3C/g%3E%3Ccircle cx=%2292%22 cy=%2292%22 r=%2219%22 fill=%22%2322c55e%22 stroke=%22%23fff%22 stroke-width=%225%22/%3E%3Cpath d=%22M83 92.5l6.5 6.5L101 86%22 fill=%22none%22 stroke=%22%23fff%22 stroke-width=%225.5%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E") center / contain no-repeat;
+        margin-right: .65rem;
     }
 
+    // Progress bar along the bottom edge
     &:after {
         content: "";
-        background: green;
-        height: 0.2rem;
         position: absolute;
-        top: 0;
         left: 0;
-        transition: width 0.25s ease-out;
-        width: calc(var(--progress) * 100%);
-    }
-
-    &::backdrop {
-        transition: background 1s ease-in-out;
-        background: transparent;
+        bottom: 0;
+        height: 3px;
+        width: calc(var(--progress, 0) * 100%);
+        background: linear-gradient(90deg, #86efac, #22c55e);
+        border-radius: 0 3px 3px 0;
+        transition: width .25s ease-out;
     }
 
     p {
-        color: white;
         margin: 0;
-        font-size: 0.8rem;
-        font-family: sans-serif;
-        font-weight: 300;
+        color: #fff;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        font-size: .85rem;
+        font-weight: 500;
+        line-height: 1.3;
     }
 }
 
 .ConsentOMatic-Progress-Started .ConsentOMatic-Progress-Dialog {
     opacity: 1;
 }
-.ConsentOMatic-Progress-Started .ConsentOMatic-Progress-Dialog::backdrop {
-    background: rgba(0,20,100,0.25);
-}
 .ConsentOMatic-Progress-Complete .ConsentOMatic-Progress-Dialog {
     opacity: 0;
 }
-.ConsentOMatic-Progress-Complete .ConsentOMatic-Progress-Dialog::backdrop {
-    background: transparent !important;
+
+@media (prefers-reduced-motion: reduce) {
+    .ConsentOMatic-Progress-Dialog-Modal,
+    .ConsentOMatic-Progress-Dialog,
+    .ConsentOMatic-Progres-Preview {
+        animation: none;
+        transition: none;
+    }
 }
-
-
-

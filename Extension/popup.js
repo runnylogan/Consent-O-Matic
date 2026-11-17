@@ -13,6 +13,10 @@ if (frontTab){
         let activeInput = document.querySelector(".siteselector input");
         document.querySelector("#site").textContent = url;
         document.querySelector("#unhandled_site").textContent = url;
+        document.querySelector("#teach").addEventListener("click", function () {
+            chrome.tabs.sendMessage(tabs[0].id, "StartTeach");
+            window.close();
+        });
         document.querySelector("#settings").addEventListener("click", function () {
             chrome.runtime.openOptionsPage();
             window.close();

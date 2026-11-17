@@ -1,5 +1,5 @@
 {
-	"name": "Consent-O-Matic",
+	"name": "Consent-O-Matic (Fork)",
 	"description": "Automatic handling of GDPR consent forms",
 	"author": "CAVI - Aarhus University",
 	"homepage_url": "https://github.com/cavi-au/Consent-O-Matic",
@@ -14,7 +14,7 @@
 		"<all_urls>"
 	],
 	"action": {
-		"default_title": "Consent-O-Matic",
+		"default_title": "Consent-O-Matic (Fork)",
 		"default_popup": "popup.html"
 	},
 	"background": {
@@ -48,7 +48,7 @@
 	},
 	"browser_specific_settings": {
 		"gecko": {
-			"id": "gdpr@cavi.au.dk",
+			"id": "consent-o-matic-fork@runnylogan",
 			"strict_min_version": "109.0"
 		}
 	}

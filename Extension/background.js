@@ -1,4 +1,5 @@
 import GDPRConfig from './GDPRConfig.js';
+import { scheduleBackup, pushRemote, pushGist } from './Backup.js';
 
 const STATUS = {
     "INIT": 0,
@@ -247,3 +248,15 @@ GDPRConfig.getDebugValues().then((config)=>{
         });
     }
 })
+
+
+// Back up custom rules automatically whenever they change (snapshot + dated file in Downloads).
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes.customRuleLists) {
+        scheduleBackup();
+    }
+});
+
+// Catch up on anything not yet pushed (failed earlier, or changed while offline). No-op when unchanged.
+pushRemote().catch((e) => console.warn("Online backup failed:", e.message));
+pushGist().catch((e) => console.warn("Gist publish failed:", e.message));
