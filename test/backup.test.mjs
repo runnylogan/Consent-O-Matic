@@ -11,7 +11,7 @@ function area() {
 }
 globalThis.chrome = { storage: { local: area(), sync: area() }, runtime: {} };
 
-const { buildBackup, validateBackup, applyBackup, snapshotLocal, listSnapshots } = await import("../Extension/Backup.js");
+const { buildBackup, validateBackup, applyBackup, normaliseImport, snapshotLocal, listSnapshots } = await import("../Extension/Backup.js");
 const GDPRConfig = (await import("../Extension/GDPRConfig.js")).default;
 
 const rule = (n) => ({ [n]: { detectors: [{ presentMatcher: [{ type: "css", target: { selector: "#x" } }] }], methods: [] } });
@@ -54,4 +54,17 @@ test("malformed or foreign files are rejected", () => {
     assert.throws(() => validateBackup({}), /Not a Consent-O-Matic backup/);
     assert.throws(() => validateBackup({ format: "consent-o-matic-backup", version: 99, customRuleLists: {} }), /newer/);
     assert.throws(() => validateBackup({ format: "consent-o-matic-backup", version: 1, customRuleLists: { bad: {} } }), /malformed/);
+});
+
+test("plain rules file (e.g. custom-rules.json from a gist) imports as custom rules", async () => {
+    await GDPRConfig.setCustomRuleLists({});
+    const plain = { "$schema": "https://example.invalid/rules.schema.json", ...rule("ConsentMagic"), ...rule("BBC") };
+    const n = await applyBackup(plain, "merge");
+    assert.equal(n, 2);
+    assert.deepEqual(Object.keys(await GDPRConfig.getCustomRuleLists()).sort(), ["BBC", "ConsentMagic"]);
+});
+
+test("normaliseImport leaves non-rule objects alone so they still fail validation", () => {
+    assert.throws(() => validateBackup(normaliseImport({ foo: 1 })), /Not a Consent-O-Matic backup/);
+    assert.throws(() => validateBackup(normaliseImport({ a: { detectors: [] } })), /Not a Consent-O-Matic backup/);
 });

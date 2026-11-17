@@ -17,6 +17,14 @@ export async function buildBackup() {
     };
 }
 
+/** Accepts either a full backup or a plain rules file ({ "$schema": ..., "name": { detectors, methods } }); returns backup form. */
+export function normaliseImport(obj) {
+    if (!obj || typeof obj !== "object" || Array.isArray(obj) || obj.format === BACKUP_FORMAT) return obj;
+    const names = Object.keys(obj).filter((k) => k !== "$schema");
+    const looksLikeRules = names.length > 0 && names.every((k) => obj[k] && Array.isArray(obj[k].detectors) && Array.isArray(obj[k].methods));
+    return looksLikeRules ? { format: BACKUP_FORMAT, version: BACKUP_VERSION, customRuleLists: obj } : obj;
+}
+
 export function validateBackup(obj) {
     if (!obj || typeof obj !== "object") throw new Error("Not a JSON object");
     if (obj.format !== BACKUP_FORMAT) throw new Error("Not a Consent-O-Matic backup file");
@@ -35,6 +43,7 @@ export function validateBackup(obj) {
 
 /** mode: "merge" keeps existing rules (backup wins on name clash); "replace" overwrites everything. */
 export async function applyBackup(obj, mode = "merge", { settings = true } = {}) {
+    obj = normaliseImport(obj);
     validateBackup(obj);
     await snapshotLocal("before-restore");
 
