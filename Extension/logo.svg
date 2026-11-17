@@ -1,22 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Consent-O-Matic">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#5b6cff"/>
-      <stop offset="1" stop-color="#7c3aed"/>
-    </linearGradient>
     <mask id="bite">
       <rect width="128" height="128" fill="#fff"/>
-      <circle cx="84" cy="40" r="15" fill="#000"/>
+      <circle cx="95" cy="27" r="20" fill="#000"/>
     </mask>
   </defs>
-  <rect width="128" height="128" rx="30" fill="url(#bg)"/>
   <g mask="url(#bite)">
-    <circle cx="62" cy="64" r="38" fill="#fff"/>
+    <circle cx="60" cy="62" r="56" fill="#eaa94a" stroke="#b9772a" stroke-width="4"/>
   </g>
-  <g fill="#5b6cff" opacity=".4">
-    <circle cx="48" cy="52" r="5"/><circle cx="68" cy="70" r="5.5"/>
-    <circle cx="46" cy="78" r="4.5"/><circle cx="72" cy="50" r="3.5"/>
+  <g fill="#7a4a17">
+    <circle cx="38" cy="46" r="7"/><circle cx="66" cy="74" r="8"/>
+    <circle cx="36" cy="82" r="6.5"/><circle cx="70" cy="44" r="5"/>
+    <circle cx="52" cy="104" r="5"/><circle cx="20" cy="64" r="4"/>
   </g>
-  <circle cx="92" cy="92" r="19" fill="#22c55e" stroke="#fff" stroke-width="5"/>
-  <path d="M83 92.5l6.5 6.5L101 86" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="96" cy="96" r="28" fill="#22c55e" stroke="#fff" stroke-width="5"/>
+  <path d="M82 97l10 10L112 84" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

@@ -196,7 +196,17 @@ if (optionsUL){
     });
 
     document.querySelector("#forceupdate").addEventListener("click", () => {
-        GDPRConfig.clearRuleCache();
+        const status = document.querySelector("#updateStatus");
+        const setStatus = (text, ok = true) => { status.textContent = text; status.classList.toggle("error", !ok); };
+        setStatus("Updating rules…");
+        chrome.runtime.sendMessage("ForceRuleUpdate", (res) => {
+            if (chrome.runtime.lastError || !res) { setStatus("Update failed: " + (chrome.runtime.lastError ? chrome.runtime.lastError.message : "no response"), false); return; }
+            const failed = res.lists.filter((l) => !l.ok);
+            const n = (x, w) => x + " " + w + (x === 1 ? "" : "s");
+            let text = "Updated " + n(res.lists.length - failed.length, "rule list") + ": " + n(res.total, "rule") + " loaded, plus " + n(res.custom, "custom rule") + ".";
+            if (failed.length) text += " Failed to fetch " + failed.map((l) => l.url).join(", ") + " (kept the previous copy if there was one).";
+            setStatus(text, failed.length === 0);
+        });
     });
 
     // ---- Backup & restore ----

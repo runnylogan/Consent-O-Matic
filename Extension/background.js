@@ -1,5 +1,5 @@
 import GDPRConfig from './GDPRConfig.js';
-import { scheduleBackup, pushRemote, pushGist } from './Backup.js';
+import { scheduleBackup, pushRemote, pushGist, seedBundledRules } from './Backup.js';
 
 const STATUS = {
     "INIT": 0,
@@ -25,6 +25,11 @@ chrome.runtime.onMessage.addListener(function (message, sender, reply) {
                 });
             });
             //Return true to keep reply working after method has ended, async response
+            return true;
+        }
+
+        case "ForceRuleUpdate": {
+            forceRuleUpdate().then(reply);
             return true;
         }
 
@@ -197,6 +202,30 @@ function fetchRules(forceUpdate) {
 
 }
 
+const isRule = (v) => v && typeof v === "object" && Array.isArray(v.detectors);
+
+/** Re-fetch every rule list now and report what came back, for the "Update rules now" status line. */
+async function forceRuleUpdate() {
+    const ruleLists = await GDPRConfig.getRuleLists();
+    const cachedEntries = {};
+    const lists = [];
+    let total = 0;
+    for (const url of ruleLists) {
+        const theList = await fetchRulesList(url);
+        if (theList == null) { lists.push({ url, ok: false, rules: 0 }); continue; }
+        const rules = Object.values(theList).filter(isRule).length;
+        cachedEntries[url] = { timestamp: Date.now() / 1000, rules: theList };
+        lists.push({ url, ok: true, rules });
+        total += rules;
+    }
+    // Keep the old cache for lists that failed to fetch; replace the rest.
+    const old = await new Promise((r) => chrome.storage.local.get({ cachedEntries: {} }, (v) => r(v.cachedEntries)));
+    for (const l of lists) if (!l.ok && old[l.url]) cachedEntries[l.url] = old[l.url];
+    await new Promise((r) => chrome.storage.local.set({ cachedEntries }, r));
+    const custom = Object.keys(await GDPRConfig.getCustomRuleLists()).length;
+    return { lists, total, custom };
+}
+
 let tabStatusMap = new Map();
 
 chrome.tabs.onUpdated.addListener((tabId, info, tab)=>{
@@ -250,7 +279,7 @@ GDPRConfig.getDebugValues().then((config)=>{
 })
 
 
-// Back up custom rules automatically whenever they change (snapshot + dated file in Downloads).
+// Back up custom rules automatically whenever they change (local snapshot + online targets).
 chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "local" && changes.customRuleLists) {
         scheduleBackup();
@@ -260,3 +289,15 @@ chrome.storage.onChanged.addListener((changes, area) => {
 // Catch up on anything not yet pushed (failed earlier, or changed while offline). No-op when unchanged.
 pushRemote().catch((e) => console.warn("Online backup failed:", e.message));
 pushGist().catch((e) => console.warn("Gist publish failed:", e.message));
+
+
+// Seed the custom rules bundled with the extension (custom-rules.json) into storage, once per bundle version.
+const BUNDLED_RULES_VERSION = 1;
+(async () => {
+    try {
+        const bundled = await (await fetch(chrome.runtime.getURL("custom-rules.json"))).json();
+        await seedBundledRules(bundled, BUNDLED_RULES_VERSION);
+    } catch (e) {
+        console.warn("Could not seed bundled custom rules:", e.message);
+    }
+})();

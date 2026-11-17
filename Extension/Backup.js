@@ -320,3 +320,22 @@ export function scheduleBackup(delay = 3000) {
         pushGist().catch((e) => console.warn("Gist publish failed:", e.message));
     }, delay);
 }
+
+
+/**
+ * Seed rules bundled with the extension into custom rules, once per bundle version.
+ * Only adds names that are missing, so later edits and deletions are never overwritten.
+ * Returns the number of rules added.
+ */
+export async function seedBundledRules(bundled, version) {
+    const { bundledRulesVersion } = await new Promise((r) => chrome.storage.local.get({ bundledRulesVersion: 0 }, r));
+    if (bundledRulesVersion >= version) return 0;
+    const current = await GDPRConfig.getCustomRuleLists();
+    const add = {};
+    for (const [name, rule] of Object.entries(bundled)) {
+        if (rule && Array.isArray(rule.detectors) && Array.isArray(rule.methods) && !(name in current)) add[name] = rule;
+    }
+    if (Object.keys(add).length) await GDPRConfig.setCustomRuleLists(Object.assign({}, current, add));
+    await new Promise((r) => chrome.storage.local.set({ bundledRulesVersion: version }, r));
+    return Object.keys(add).length;
+}

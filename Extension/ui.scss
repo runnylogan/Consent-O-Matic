@@ -174,14 +174,14 @@ input[type="url"] {
     min-height: 0;
     overflow-x: hidden;
 
-    .pane { display: flex; flex-direction: column; gap: .75rem; }
+    .pane { display: flex; flex-direction: column; gap: .75rem; min-width: 0; }
 
     .fronttab {
         flex-direction: row;
         align-items: flex-start;
         gap: 1rem;
-        > img { width: 3.25rem; height: 3.25rem; flex: none; filter: drop-shadow(0 4px 8px rgba(79, 70, 229, .35)); }
-        > .pane { flex: 1; }
+        > img { width: 3.25rem; height: 3.25rem; flex: none; }
+        > .pane { flex: 1 1 0; min-width: 0; }
 
         .notworking, .keeprunning { display: flex; flex-direction: column; gap: .35rem; color: var(--muted); }
         .siteselector {
@@ -190,7 +190,9 @@ input[type="url"] {
             gap: .6rem;
             color: var(--text);
             font-weight: 600;
-            input { accent-color: var(--primary); width: 1.1em; height: 1.1em; margin: 0; }
+            min-width: 0;
+            input { accent-color: var(--primary); width: 1.1em; height: 1.1em; margin: 0; flex: none; }
+            span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         }
         button { width: 100%; margin: 0; }
     }

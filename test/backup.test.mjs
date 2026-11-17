@@ -11,7 +11,7 @@ function area() {
 }
 globalThis.chrome = { storage: { local: area(), sync: area() }, runtime: {} };
 
-const { buildBackup, validateBackup, applyBackup, normaliseImport, snapshotLocal, listSnapshots } = await import("../Extension/Backup.js");
+const { buildBackup, validateBackup, applyBackup, normaliseImport, seedBundledRules, snapshotLocal, listSnapshots } = await import("../Extension/Backup.js");
 const GDPRConfig = (await import("../Extension/GDPRConfig.js")).default;
 
 const rule = (n) => ({ [n]: { detectors: [{ presentMatcher: [{ type: "css", target: { selector: "#x" } }] }], methods: [] } });
@@ -67,4 +67,16 @@ test("plain rules file (e.g. custom-rules.json from a gist) imports as custom ru
 test("normaliseImport leaves non-rule objects alone so they still fail validation", () => {
     assert.throws(() => validateBackup(normaliseImport({ foo: 1 })), /Not a Consent-O-Matic backup/);
     assert.throws(() => validateBackup(normaliseImport({ a: { detectors: [] } })), /Not a Consent-O-Matic backup/);
+});
+
+test("bundled rules seed once, add only missing names, and never resurrect deleted ones", async () => {
+    await GDPRConfig.setCustomRuleLists(rule("Mine"));
+    const bundled = { "$schema": "x", ...rule("ConsentMagic"), ...rule("Mine"), junk: { nope: 1 } };
+    assert.equal(await seedBundledRules(bundled, 1), 2 - 1);            // ConsentMagic only; Mine kept, junk skipped
+    assert.deepEqual(Object.keys(await GDPRConfig.getCustomRuleLists()).sort(), ["ConsentMagic", "Mine"]);
+    const edited = await GDPRConfig.getCustomRuleLists();
+    delete edited.ConsentMagic;
+    await GDPRConfig.setCustomRuleLists(edited);
+    assert.equal(await seedBundledRules(bundled, 1), 0);                // same version: no resurrection
+    assert.equal(await seedBundledRules(bundled, 2), 1);                // newer bundle version: adds missing again
 });

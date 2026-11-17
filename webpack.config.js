@@ -67,7 +67,7 @@ module.exports = env=>({
      ],
   },
   plugins: [
-    new CopyPlugin({patterns: [{
+    new CopyPlugin({patterns: [{ from: "Extension/custom-rules.json", to: "custom-rules.json" }, {
         from: "Extension/manifest." + env.target + ".json",
         to: "manifest.json",
         force: true,
