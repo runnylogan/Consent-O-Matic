@@ -20,10 +20,27 @@ const TEXT = {
 const CATEGORY_RULES = [
     ["F", /\b(advertis|advert\b|marketing|targeting|targeted|retarget|interest-based|personali[sz]ed ads?|ads?\b|sponsored|werbung|publicité|pubblicit|publicidad)/i],
     ["B", /\b(analytic|statistic|performance|measurement|measure|metrics|usage|how (you|visitors|people) use|traffic|audience|statistik|statistique|analisi|estadístic)/i],
-    ["A", /\b(preference|functional|functionality|experience|personali[sz]ation|customi[sz]ation|remember|settings|language|präferenz|préférence|funzional)/i],
+    ["A", /\b(preference|functional|functionality|personali[sz]ation|customi[sz]ation|remember|settings|language|präferenz|préférence|funzional)/i],
     ["E", /\b(content|social media|social|video|embedded|media|recommend|inhalte|contenu)/i],
-    ["D", /\b(storage|store and\/or access|access information|device information|geolocation|information storage|speicher)/i]
+    ["D", /\b(storage|stor(e|ing)( and\/or access)?|access(ing)? (to )?information|information (on|stored on) (a|your) device|on your device|device information|geolocation|information storage|speicher)/i]
 ];
+
+/**
+ * The banner or panel a click landed in: nearest fixed/sticky/dialog ancestor, else the largest ancestor that is still
+ * just a small block of text (so we never select the whole page).
+ */
+export function containerOf(el) {
+    const doc = el.ownerDocument, view = doc.defaultView;
+    let small = el;
+    for (let n = el; n && n !== doc.body && n !== doc.documentElement; n = n.parentElement) {
+        if (/fixed|sticky/.test(view.getComputedStyle(n).position) || n.matches("dialog,[role='dialog'],[aria-modal='true']")) return n;
+    }
+    for (let n = el.parentElement; n && n !== doc.body && n !== doc.documentElement; n = n.parentElement) {
+        if (cleanText(n).length > 1500 || n.querySelector("main,header,nav,footer")) break;
+        small = n;
+    }
+    return small;
+}
 
 export function visible(el) {
     if (!el || !el.isConnected) return false;
@@ -137,7 +154,7 @@ function hostMatcher(hostname) {
 }
 
 /** presentMatcher/showingMatcher target for a banner; generic selectors get a text filter so they only match cookie banners. */
-function bannerTarget(banner, selector, extra = {}) {
+export function bannerTarget(banner, selector, extra = {}) {
     const target = { selector, ...extra };
     if (GENERIC_SELECTOR.test(selector)) {
         const word = (cleanText(banner).match(BANNER_WORDS) || [])[0];
@@ -398,9 +415,21 @@ export function generateRuleFromPicks(picks, hostname) {
         return { parent: parents[where] || parents.banner, target: { selector } };
     };
     const click = (el) => ({ type: "click", ...act(el) });
+    // Teach mode snapshots the target while the banner is on screen; its text may differ once the options are open.
+    const bannerTargetFor = (extra = {}) => picks.bannerTargetBase
+        ? { ...picks.bannerTargetBase, ...extra } : bannerTarget(banner, bannerSelector, extra);
     const methods = [];
 
-    if (picks.manage) methods.push({ name: "OPEN_OPTIONS", action: click(picks.manage) });
+    if (picks.manage) {
+        // After opening the options, wait for the first toggle to exist before the consent step runs.
+        const firstToggle = picks.toggles && picks.toggles[0];
+        methods.push({
+            name: "OPEN_OPTIONS",
+            action: firstToggle
+                ? { type: "list", actions: [click(picks.manage), { type: "waitcss", ...act(firstToggle.el), retries: 20, waitTime: 150 }] }
+                : click(picks.manage)
+        });
+    }
 
     if (picks.toggles && picks.toggles.length) {
         methods.push({
@@ -436,12 +465,13 @@ export function generateRuleFromPicks(picks, hostname) {
 
     const name = ruleNameFor(hostname, banner).replace("auto:", "taught:");
     return {
+        taught: true,
         name,
         rule: {
             [name]: {
                 detectors: [{
-                    presentMatcher: [hostMatcher(hostname), { type: "css", target: bannerTarget(banner, bannerSelector) }],
-                    showingMatcher: [{ type: "css", target: bannerTarget(banner, bannerSelector, { displayFilter: true }) }]
+                    presentMatcher: [hostMatcher(hostname), { type: "css", target: bannerTargetFor() }],
+                    showingMatcher: [{ type: "css", target: bannerTargetFor({ displayFilter: true }) }]
                 }],
                 methods
             }

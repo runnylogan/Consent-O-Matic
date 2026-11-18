@@ -1,4 +1,4 @@
-import { CONSENT_TYPE_NAMES, generateRuleFromPicks, discover, visible, uniqueSelector } from "./Discovery.js";
+import { CONSENT_TYPE_NAMES, generateRuleFromPicks, discover, visible, uniqueSelector, containerOf, bannerTarget } from "./Discovery.js";
 
 // All UI lives in a closed shadow root so page CSS cannot break it and it cannot break the page.
 function createHost() {
@@ -127,8 +127,10 @@ export function showReview(result, dryRun) {
         addRow("Save button", a.save); addRow("Options button", a.manage);
         a.toggles.forEach((t, i) => rows.push(el("div", { class: "row" }, el("span", { title: t.label }, t.label || "(unlabelled toggle)"), typeSelects[i])));
 
-        const save = el("button", { onclick: () => done("save", { types: typeSelects.map(s => s.value) }) }, "Save rule");
-        if (!dryRun.ok) save.setAttribute("disabled", "");
+        // A rule you taught yourself can still be saved when the live check fails: the page may have changed while you taught it.
+        const save = el("button", { onclick: () => done("save", { types: typeSelects.map(s => s.value) }) },
+            dryRun.ok ? "Save rule" : (result.taught ? "Save anyway" : "Save rule"));
+        if (!dryRun.ok && !result.taught) save.setAttribute("disabled", "");
 
         const card = el("div", { class: "card", role: "dialog", "aria-label": "Consent-O-Matic: new banner" },
             el("header", {}, el("div", { class: "dot" }, "C"),
@@ -137,6 +139,7 @@ export function showReview(result, dryRun) {
             el("div", { class: "body" },
                 el("div", { class: "row", style: "border-top:0" },
                     el("span", { class: "badge " + conf[1] }, conf[0]), el("span", { class: "badge " + dry[1], title: dryRun.detail || "" }, dry[0])),
+                dryRun.ok ? [] : el("div", { class: "muted", style: "padding:4px 0 8px" }, dryRun.detail || ""),
                 rows),
             el("footer", {}, save,
                 el("button", { class: "ghost", onclick: () => done("teach") }, "Teach it"),
@@ -161,7 +164,7 @@ export function teachMode(hostname) {
             { key: "reject", prompt: "Click the “Reject all” button (or Skip)", skippable: true },
             { key: "accept", prompt: "Click the “Accept all” button (or Skip)", skippable: true }
         ];
-        const picks = { toggles: [], info: new Map() };
+        const picks = { toggles: [], info: new Map(), problems: [] };
         let i = 0, hovered = null, removeHover = () => {};
 
         const { host, shadow } = createHost();
@@ -185,13 +188,14 @@ export function teachMode(hostname) {
             cleanup();
             if (!picks.banner) return resolve(null);
             const result = generateRuleFromPicks(picks, hostname);
-            // The page may have swapped the banner for an options panel while teaching, so the live-page dry run no
-            // longer applies. Every selector was checked against the page as it was when picked.
-            if (result && !(picks.banner.isConnected && visible(picks.banner))) {
+            // The page may replace the banner with an options panel while teaching, so the elements never exist together
+            // and a live-page dry run cannot work. Each pick was checked against the page as it was when you made it.
+            if (result) {
                 const twin = picks.accept && picks.accept === picks.reject;
-                result.dryRun = twin
-                    ? { ok: false, detail: "Accept and reject are the same button" }
-                    : { ok: true, detail: "Built from the elements you picked" };
+                result.dryRun = picks.problems.length
+                    ? { ok: false, detail: picks.problems[0] }
+                    : twin ? { ok: false, detail: "Accept and reject are the same button" }
+                        : { ok: true, detail: "Built from the elements you picked" };
             }
             resolve(result);
         };
@@ -207,17 +211,15 @@ export function teachMode(hostname) {
             if (inUi(e.target)) return;
             removeHover(); hovered = e.target; removeHover = highlight(hovered);
         }
-        // Nearest fixed/dialog-like ancestor, else the element itself.
-        const containerOf = (t) => {
-            for (let n = t; n && n !== document.body; n = n.parentElement) {
-                if (/fixed|sticky/.test(getComputedStyle(n).position) || n.matches("dialog,[role='dialog'],[aria-modal='true']")) return n;
-            }
-            return t;
-        };
         // Selectors are recorded now: opening the options can replace or remove the banner.
         const record = (el) => {
             const where = picks.panel && picks.panel.contains(el) && !picks.banner.contains(el) ? "panel" : "banner";
-            picks.info.set(el, { where, selector: uniqueSelector(el, where === "panel" ? picks.panel : picks.banner) });
+            const scope = where === "panel" ? picks.panel : picks.banner;
+            const selector = uniqueSelector(el, scope);
+            picks.info.set(el, { where, selector });
+            let found = null;
+            try { found = scope.querySelectorAll(selector); } catch (e) { /* invalid selector */ }
+            if (!found || found.length !== 1 || found[0] !== el) picks.problems.push("Could not build a reliable selector for \"" + (el.textContent || el.tagName).trim().slice(0, 30) + "\"");
         };
         function onClick(e) {
             if (inUi(e.target)) return;
@@ -237,6 +239,10 @@ export function teachMode(hostname) {
             if (s.key === "banner") {
                 picks.banner = containerOf(t);
                 picks.bannerSelector = uniqueSelector(picks.banner);
+                picks.bannerTargetBase = bannerTarget(picks.banner, picks.bannerSelector);
+                let ok = false;
+                try { ok = document.querySelector(picks.bannerSelector) === picks.banner; } catch (e) { /* invalid */ }
+                if (!ok) picks.problems.push("Could not build a reliable selector for the banner");
                 next();
             } else if (s.key === "toggle") {
                 const input = t.matches("input") ? t : (t.querySelector("input[type='checkbox']") || t.closest("label")?.querySelector("input") || t);

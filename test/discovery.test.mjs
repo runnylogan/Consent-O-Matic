@@ -7,7 +7,7 @@ import Ajv from "ajv";
 // Minimal CSS.escape (jsdom lacks it; real browsers have it).
 globalThis.CSS = { escape: (s) => String(s).replace(/([^a-zA-Z0-9_\u00A0-\uFFFF-])/g, "\\$1").replace(/^(\d)/, "\\3$1 ") };
 
-const { discover, classifyButtons, classifyToggles, exploreOptions, openerRule, generateRuleFromPicks, uniqueSelector, categoryFor } = await import("../Extension/Discovery.js");
+const { discover, classifyButtons, classifyToggles, exploreOptions, openerRule, generateRuleFromPicks, uniqueSelector, categoryFor, containerOf } = await import("../Extension/Discovery.js");
 const schema = JSON.parse(fs.readFileSync(new URL("../rules.schema.json", import.meta.url)));
 const ajv = new Ajv({ strict: false, allErrors: true });
 const validate = ajv.compile(schema);
@@ -263,7 +263,9 @@ test("taught rule: toggles in a separate panel opened by the manage button are s
     const out = generateRuleFromPicks(picks, "shop.test");
     const methods = out.rule[out.name].methods;
     assert.ok(validate(out.rule), JSON.stringify(validate.errors));
-    assert.equal(methods.find(m => m.name === "OPEN_OPTIONS").action.parent.selector, "#cmpbanner");
+    const open = methods.find(m => m.name === "OPEN_OPTIONS").action;
+    assert.equal(open.actions[0].parent.selector, "#cmpbanner");
+    assert.deepEqual(open.actions[1], { type: "waitcss", parent: { selector: "#prefpanel" }, target: { selector: "#ads" }, retries: 20, waitTime: 150 });
     const consent = methods.find(m => m.name === "DO_CONSENT").action.consents[0];
     assert.equal(consent.toggleAction.parent.selector, "#prefpanel");
     assert.equal(methods.find(m => m.name === "SAVE_CONSENT").action.parent.selector, "#prefpanel");
@@ -277,7 +279,7 @@ test("taught rule: toggles in a separate panel opened by the manage button are s
 test("categoryFor guesses from the label, then from the description beside the toggle", () => {
     const doc = load(`
         <ul>
-          <li><label><input type="checkbox" id="a"> Experience cookies</label></li>
+          <li><label><input type="checkbox" id="a"> Remember my settings</label></li>
           <li><label><input type="checkbox" id="b"> Personalised advertising</label></li>
           <li><label><input type="checkbox" id="c"> Performance cookies</label></li>
           <li><input type="checkbox" id="d" aria-label="Group 4"><p>Measures how visitors use the site, with analytics and statistics.</p></li>
@@ -295,4 +297,12 @@ test("taught toggles with no type set are categorised from their text; an explic
         { el: doc.getElementById("x1"), type: "X" }, { el: doc.getElementById("x2"), type: "E" }] }, "shop.test");
     assert.deepEqual(out.analysis.toggles.map(t => t.type), ["F", "E"]);
     assert.deepEqual(out.rule[out.name].methods.find(m => m.name === "DO_CONSENT").action.consents.map(c => c.type), ["F", "E"]);
+});
+
+test("containerOf finds a non-fixed panel without selecting the whole page", () => {
+    const doc = load(`<div id="wrap"><section id="panel"><h2>Your choices</h2>
+        <label><input type="checkbox" id="t1"> Experience cookies</label><button id="sv">Confirm</button></section></div>`);
+    assert.equal(containerOf(doc.getElementById("t1")).id, "wrap");
+    const fixed = load(`<div id="f" style="position:fixed"><div><button id="b1">Go</button></div></div>`);
+    assert.equal(containerOf(fixed.getElementById("b1")).id, "f");
 });
