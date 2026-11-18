@@ -103,7 +103,7 @@ async function reviewAndSave(ctx, result, dry) {
         if (decision.action === "teach") {
             const taught = await teachMode(host);
             if (!taught) continue;
-            result = taught; dry = dryRun(result.rule);
+            result = taught; dry = taught.dryRun || dryRun(result.rule);
             continue;
         }
         applyTypes(result, decision.types);
@@ -123,7 +123,7 @@ async function reviewAndSave(ctx, result, dry) {
 export async function startTeach(ctx) {
     const result = await teachMode(ctx.host);
     if (!result) return;
-    await reviewAndSave(ctx, result, dryRun(result.rule));
+    await reviewAndSave(ctx, result, result.dryRun || dryRun(result.rule));
 }
 
 /** Automatic discovery after the engine found nothing. Stays silent when the page has no banner. */
@@ -165,7 +165,7 @@ export async function runDiscovery(ctx) {
                 "Nothing I can read appeared. Show me which buttons to use?", [["teach", "Teach it", true], ["no", "Not now", false]]);
             if (choice2 !== "teach") { await dismissHost(host); return; }
             const taught = await teachMode(host);
-            if (taught) await reviewAndSave(ctx, taught, dryRun(taught.rule));
+            if (taught) await reviewAndSave(ctx, taught, taught.dryRun || dryRun(taught.rule));
             return;
         }
     }

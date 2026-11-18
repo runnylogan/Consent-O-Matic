@@ -185,6 +185,14 @@ export function teachMode(hostname) {
             cleanup();
             if (!picks.banner) return resolve(null);
             const result = generateRuleFromPicks(picks, hostname);
+            // The page may have swapped the banner for an options panel while teaching, so the live-page dry run no
+            // longer applies. Every selector was checked against the page as it was when picked.
+            if (result && !(picks.banner.isConnected && visible(picks.banner))) {
+                const twin = picks.accept && picks.accept === picks.reject;
+                result.dryRun = twin
+                    ? { ok: false, detail: "Accept and reject are the same button" }
+                    : { ok: true, detail: "Built from the elements you picked" };
+            }
             resolve(result);
         };
         const render = () => {
