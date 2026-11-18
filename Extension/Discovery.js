@@ -420,15 +420,17 @@ export function generateRuleFromPicks(picks, hostname) {
         ? { ...picks.bannerTargetBase, ...extra } : bannerTarget(banner, bannerSelector, extra);
     const methods = [];
 
-    if (picks.manage) {
-        // After opening the options, wait for the first toggle to exist before the consent step runs.
-        const firstToggle = picks.toggles && picks.toggles[0];
-        methods.push({
-            name: "OPEN_OPTIONS",
-            action: firstToggle
-                ? { type: "list", actions: [click(picks.manage), { type: "waitcss", ...act(firstToggle.el), retries: 20, waitTime: 150 }] }
-                : click(picks.manage)
-        });
+    const reveals = picks.reveals || [];
+    if (picks.manage || reveals.length) {
+        // Open the options, wait for the first toggle, replay any sections the user expanded, then wait for the last toggle.
+        const toggles = picks.toggles || [];
+        const wait = (t) => ({ type: "waitcss", ...act(t.el), retries: 20, waitTime: 150 });
+        const steps = [];
+        if (picks.manage) steps.push(click(picks.manage));
+        if (toggles.length) steps.push(wait(toggles[0]));
+        reveals.forEach(r => steps.push(click(r.el)));
+        if (reveals.length && toggles.length > 1) steps.push(wait(toggles[toggles.length - 1]));
+        methods.push({ name: "OPEN_OPTIONS", action: steps.length === 1 ? steps[0] : { type: "list", actions: steps } });
     }
 
     if (picks.toggles && picks.toggles.length) {

@@ -159,12 +159,13 @@ export function teachMode(hostname) {
         const steps = [
             { key: "banner", prompt: "Click anywhere inside the cookie banner", required: true },
             { key: "manage", prompt: "Click the button that opens detailed options. It will open as normal (or Skip)", skippable: true },
-            { key: "toggle", prompt: "Click each cookie toggle, then press Done. Clicks here only record the toggle", multi: true, skippable: true },
+            { key: "toggle", prompt: "Click each cookie toggle, then press Done. To open a group first, press Expand", multi: true, skippable: true },
             { key: "save", prompt: "Click the button that saves or confirms the choices (or Skip)", skippable: true },
             { key: "reject", prompt: "Click the “Reject all” button (or Skip)", skippable: true },
             { key: "accept", prompt: "Click the “Accept all” button (or Skip)", skippable: true }
         ];
-        const picks = { toggles: [], info: new Map(), problems: [] };
+        const picks = { toggles: [], reveals: [], info: new Map(), problems: [] };
+        let browsing = false;
         let i = 0, hovered = null, removeHover = () => {};
 
         const { host, shadow } = createHost();
@@ -172,9 +173,10 @@ export function teachMode(hostname) {
         const skip = el("button", { class: "ghost" }, "Skip");
         const done = el("button", {}, "Done");
         const cancel = el("button", { class: "ghost" }, "Cancel");
+        const browse = el("button", { class: "ghost", title: "Clicks go to the page so you can expand sections; they are replayed when the rule runs" }, "Expand");
         const teachCard = el("div", { class: "card" },
             el("header", {}, el("div", { class: "dot" }, "C"), el("h1", {}, "Teach Consent-O-Matic")), msg,
-            el("footer", {}, skip, done, cancel));
+            el("footer", {}, skip, done, browse, cancel));
         shadow.appendChild(teachCard);
         makeDraggable(host, teachCard.querySelector("header"));
 
@@ -201,7 +203,12 @@ export function teachMode(hostname) {
         };
         const render = () => {
             const s = steps[i];
-            msg.textContent = `Step ${i + 1} of ${steps.length}: ${s.prompt}` + (s.multi ? ` (${picks.toggles.length} picked)` : "");
+            msg.textContent = browsing
+                ? "Expand mode: click to open anything you need. Your clicks go to the page and are replayed by the rule. Press Back when done."
+                : `Step ${i + 1} of ${steps.length}: ${s.prompt}` + (s.multi ? ` (${picks.toggles.length} picked)` : "");
+            browse.textContent = browsing ? "Back" : "Expand";
+            browse.style.display = picks.banner ? "" : "none";
+            skip.disabled = done.disabled = browsing;
             skip.style.display = s.skippable ? "" : "none";
             done.style.display = s.multi ? "" : "none";
         };
@@ -221,10 +228,28 @@ export function teachMode(hostname) {
             try { found = scope.querySelectorAll(selector); } catch (e) { /* invalid selector */ }
             if (!found || found.length !== 1 || found[0] !== el) picks.problems.push("Could not build a reliable selector for \"" + (el.textContent || el.tagName).trim().slice(0, 30) + "\"");
         };
+        const TOGGLE = "input[type='checkbox'],input[type='radio'],[role='switch'],[role='checkbox']";
+        // A click that only expands or collapses a section: let the page handle it and replay it when the rule runs.
+        const reveal = (t) => {
+            const el = t.closest("button,[role='button'],a,summary,[aria-expanded],[aria-controls]") || t;
+            if (!picks.panel && !picks.banner.contains(el) && picks.manage) {
+                picks.panel = containerOf(el);
+                picks.panelSelector = uniqueSelector(picks.panel);
+            }
+            const again = picks.reveals.findIndex(r => r.el === el);
+            if (again >= 0) { picks.reveals.splice(again, 1); return; } // clicked twice: net no change
+            record(el);
+            picks.reveals.push({ el });
+        };
         function onClick(e) {
             if (inUi(e.target)) return;
             const s = steps[i];
             const t = e.target;
+            if (browsing) { if (picks.banner) reveal(t); return; }
+            if (s.key === "toggle" && picks.banner && !t.closest(TOGGLE) && !t.closest("label")?.querySelector(TOGGLE)
+                && !t.querySelector(TOGGLE) && t.closest("[aria-expanded],summary,[aria-controls]")) {
+                reveal(t); return;
+            }
             if (s.key === "manage") {
                 // Let the page open its options panel so its toggles can be picked next.
                 const link = t.closest("a[href]");
@@ -262,6 +287,7 @@ export function teachMode(hostname) {
                 next();
             }
         }
+        browse.addEventListener("click", () => { browsing = !browsing; render(); });
         skip.addEventListener("click", next);
         done.addEventListener("click", next);
         cancel.addEventListener("click", () => { cleanup(); resolve(null); });

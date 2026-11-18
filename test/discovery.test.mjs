@@ -306,3 +306,21 @@ test("containerOf finds a non-fixed panel without selecting the whole page", () 
     const fixed = load(`<div id="f" style="position:fixed"><div><button id="b1">Go</button></div></div>`);
     assert.equal(containerOf(fixed.getElementById("b1")).id, "f");
 });
+
+test("taught rule replays expanded sections and waits for the last nested toggle", () => {
+    const doc = load(`<div id="cmp" style="position:fixed"><button id="show">Show purposes</button>
+        <section id="grp"><button id="plus" aria-expanded="false">+</button><label>Experience <input type="checkbox" id="g1"></label>
+        <div><label>Store and/or access information on a device <input type="checkbox" id="n1"></label></div></section>
+        <button id="sv">Confirm my choices</button></div>`);
+    const q = (x) => doc.querySelector(x), cmp = q("#cmp");
+    const info = new Map(); const rec = (el) => info.set(el, { where: "banner", selector: uniqueSelector(el, cmp) });
+    ["#show", "#plus", "#g1", "#n1", "#sv"].forEach(x => rec(q(x)));
+    const out = generateRuleFromPicks({ banner: cmp, bannerSelector: "#cmp", info, manage: q("#show"), reveals: [{ el: q("#plus") }],
+        toggles: [{ el: q("#g1"), type: "X" }, { el: q("#n1"), type: "X" }], save: q("#sv") }, "shop.test");
+    assert.ok(validate(out.rule), JSON.stringify(validate.errors));
+    const open = out.rule[out.name].methods.find(m => m.name === "OPEN_OPTIONS").action.actions;
+    assert.deepEqual(open.map(a => a.type), ["click", "waitcss", "click", "waitcss"]);
+    assert.equal(open[2].target.selector, "#plus");
+    assert.equal(open[3].target.selector, "#n1");
+    assert.deepEqual(out.analysis.toggles.map(t => t.type), ["X", "D"]);
+});
