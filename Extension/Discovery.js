@@ -242,6 +242,16 @@ function contextFor(el) {
     return best;
 }
 
+const GENERIC_LABEL = /^(switch|toggle|checkbox|slider|button)( label)?$/i;
+
+/** Label to show for a toggle: its own label, or the start of the text beside it when the label says nothing. */
+export function displayLabel(el) {
+    const label = labelFor(el);
+    if (label && !GENERIC_LABEL.test(label.trim())) return label;
+    const near = contextFor(el);
+    return near ? near.slice(0, 60) : label;
+}
+
 /** Best-guess consent type (A,B,D,E,F or X) from a toggle's label, then from the description next to it. */
 export function categoryFor(el, label = labelFor(el)) {
     for (const [t, re] of CATEGORY_RULES) if (re.test(label)) return t;
@@ -401,6 +411,22 @@ export function discover(doc = document, hostname = location.hostname) {
 // Taught toggles start as "X" (unset): fill in a guess from their text, but never override a type the caller chose.
 const pickType = (t) => (t.type && t.type !== "X") ? t.type : categoryFor(t.el);
 
+/**
+ * Toggles revealed by expanding a group take the category of the group's own toggle: the nearest earlier toggle
+ * on the page that was not itself revealed. Returns Map(child toggle -> parent toggle).
+ */
+function parentToggles(toggles) {
+    const inOrder = toggles.slice().sort((a, b) =>
+        a.el.compareDocumentPosition(b.el) & 4 /* b follows a */ ? -1 : 1);
+    const parents = new Map();
+    let header = null;
+    for (const t of inOrder) {
+        if (t.child && header) parents.set(t, header);
+        else if (!t.child) header = t;
+    }
+    return parents;
+}
+
 export function generateRuleFromPicks(picks, hostname) {
     const banner = picks.banner;
     // Teach mode records selectors while the page is still as the user saw it (opening the options can replace the banner).
@@ -415,6 +441,9 @@ export function generateRuleFromPicks(picks, hostname) {
         return { parent: parents[where] || parents.banner, target: { selector } };
     };
     const click = (el) => ({ type: "click", ...act(el) });
+    const toggleList = picks.toggles || [];
+    const parentOf = parentToggles(toggleList);
+    const typeOf = (t) => parentOf.has(t) ? pickType(parentOf.get(t)) : pickType(t);
     // Teach mode snapshots the target while the banner is on screen; its text may differ once the options are open.
     const bannerTargetFor = (extra = {}) => picks.bannerTargetBase
         ? { ...picks.bannerTargetBase, ...extra } : bannerTarget(banner, bannerSelector, extra);
@@ -439,7 +468,7 @@ export function generateRuleFromPicks(picks, hostname) {
             action: {
                 type: "consent",
                 consents: picks.toggles.map(t => ({
-                    type: pickType(t),
+                    type: typeOf(t),
                     matcher: { type: "checkbox", ...act(t.el) },
                     toggleAction: click(t.el)
                 }))
@@ -482,7 +511,10 @@ export function generateRuleFromPicks(picks, hostname) {
             bannerSelector,
             accept: picks.accept && cleanText(picks.accept), reject: picks.reject && cleanText(picks.reject),
             save: picks.save && cleanText(picks.save), manage: picks.manage && cleanText(picks.manage),
-            toggles: (picks.toggles || []).map(t => ({ label: labelFor(t.el), type: pickType(t), hidden: false })),
+            toggles: toggleList.map(t => ({
+                label: displayLabel(t.el), type: typeOf(t), hidden: false,
+                parent: parentOf.has(t) ? toggleList.indexOf(parentOf.get(t)) : undefined
+            })),
             confidence: 1
         },
         banner

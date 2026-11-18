@@ -7,7 +7,7 @@ import Ajv from "ajv";
 // Minimal CSS.escape (jsdom lacks it; real browsers have it).
 globalThis.CSS = { escape: (s) => String(s).replace(/([^a-zA-Z0-9_\u00A0-\uFFFF-])/g, "\\$1").replace(/^(\d)/, "\\3$1 ") };
 
-const { discover, classifyButtons, classifyToggles, exploreOptions, openerRule, generateRuleFromPicks, uniqueSelector, categoryFor, containerOf } = await import("../Extension/Discovery.js");
+const { discover, classifyButtons, classifyToggles, exploreOptions, openerRule, generateRuleFromPicks, uniqueSelector, categoryFor, containerOf, displayLabel } = await import("../Extension/Discovery.js");
 const schema = JSON.parse(fs.readFileSync(new URL("../rules.schema.json", import.meta.url)));
 const ajv = new Ajv({ strict: false, allErrors: true });
 const validate = ajv.compile(schema);
@@ -323,4 +323,26 @@ test("taught rule replays expanded sections and waits for the last nested toggle
     assert.equal(open[2].target.selector, "#plus");
     assert.equal(open[3].target.selector, "#n1");
     assert.deepEqual(out.analysis.toggles.map(t => t.type), ["X", "D"]);
+});
+
+test("revealed toggles take their group's category and get a readable label", () => {
+    const doc = load(`<div id="cmp" style="position:fixed">
+        <section><label>Personalised advertising <input type="checkbox" id="g1"></label>
+            <div><div><span>Store and/or access information on a device</span> <input type="checkbox" id="n1" aria-label="Switch Label"></div>
+                 <div><span>Measure ad performance</span> <input type="checkbox" id="n2" aria-label="Switch Label"></div></div></section>
+        <section><label>Experience cookies <input type="checkbox" id="g2"></label>
+            <div><div><span>Create profiles for personalised content</span> <input type="checkbox" id="n3" aria-label="Switch Label"></div></div></section></div>`);
+    const q = (x) => doc.querySelector(x);
+    const t = (id, child = false) => ({ el: q(id), type: "X", child });
+    // Picked out of order on purpose: grouping follows page order, not pick order.
+    const toggles = [t("#n3", true), t("#g1"), t("#n1", true), t("#g2"), t("#n2", true)];
+    const out = generateRuleFromPicks({ banner: q("#cmp"), toggles }, "shop.test");
+    const byId = Object.fromEntries(out.analysis.toggles.map((x, i) => [toggles[i].el.id, x]));
+    assert.equal(byId.g1.type, "F");
+    assert.equal(byId.n1.type, "F");
+    assert.equal(byId.n2.type, "F");
+    assert.equal(byId.g2.type, "X");
+    assert.equal(byId.n3.type, "X");
+    assert.equal(out.analysis.toggles[toggles.findIndex(x => x.el.id === "n1")].parent, toggles.findIndex(x => x.el.id === "g1"));
+    assert.equal(displayLabel(q("#n1")), "Store and/or access information on a device");
 });

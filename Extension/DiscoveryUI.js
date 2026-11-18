@@ -125,7 +125,13 @@ export function showReview(result, dryRun) {
         const addRow = (label, value) => value && rows.push(el("div", { class: "row" }, el("span", {}, label), el("span", { class: "badge" }, value)));
         addRow("Reject button", a.reject); addRow("Accept button", a.accept);
         addRow("Save button", a.save); addRow("Options button", a.manage);
-        a.toggles.forEach((t, i) => rows.push(el("div", { class: "row" }, el("span", { title: t.label }, t.label || "(unlabelled toggle)"), typeSelects[i])));
+        a.toggles.forEach((t, i) => rows.push(el("div", { class: "row", style: t.parent !== undefined ? "padding-left:14px" : "" },
+            el("span", { title: t.label }, (t.parent !== undefined ? "↳ " : "") + (t.label || "(unlabelled toggle)")), typeSelects[i])));
+        // Changing a group's category carries over to the toggles inside it.
+        a.toggles.forEach((t, i) => {
+            if (t.parent === undefined) return;
+            typeSelects[t.parent].addEventListener("change", () => { typeSelects[i].value = typeSelects[t.parent].value; });
+        });
 
         // A rule you taught yourself can still be saved when the live check fails: the page may have changed while you taught it.
         const save = el("button", { onclick: () => done("save", { types: typeSelects.map(s => s.value) }) },
@@ -231,6 +237,10 @@ export function teachMode(hostname) {
         const TOGGLE = "input[type='checkbox'],input[type='radio'],[role='switch'],[role='checkbox']";
         // A click that only expands or collapses a section: let the page handle it and replay it when the rule runs.
         const reveal = (t) => {
+            // Toggles that only appear after this point belong to the group that was opened.
+            if (!picks.visibleBeforeReveal) {
+                picks.visibleBeforeReveal = new Set(Array.from(document.querySelectorAll(TOGGLE)).filter(visible));
+            }
             const el = t.closest("button,[role='button'],a,summary,[aria-expanded],[aria-controls]") || t;
             if (!picks.panel && !picks.banner.contains(el) && picks.manage) {
                 picks.panel = containerOf(el);
@@ -275,7 +285,7 @@ export function teachMode(hostname) {
                     picks.panel = containerOf(input);
                     picks.panelSelector = uniqueSelector(picks.panel);
                 }
-                if (!picks.toggles.find(x => x.el === input)) { record(input); picks.toggles.push({ el: input, type: "X" }); }
+                if (!picks.toggles.find(x => x.el === input)) { record(input); picks.toggles.push({ el: input, type: "X", child: !!picks.visibleBeforeReveal && !picks.visibleBeforeReveal.has(input) }); }
                 render();
             } else {
                 const el = t.closest("button,[role='button'],a,input") || t;
