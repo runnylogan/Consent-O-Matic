@@ -367,3 +367,31 @@ test("OneTrust-style accordion: real names from aria-label, group category from 
     assert.equal(displayLabel(doc.getElementById("s1")), "Store and/or access information on a device");
     assert.equal(categoryFor(doc.getElementById("s1")), "D");
 });
+
+test("exploreOptions opens collapsed OneTrust-style groups on its own and links children to parents", async () => {
+    const doc = load(MORE_OPTIONS);
+    const found = discover(doc, "shop.test");
+    const item = (g, title, desc, subs) => `<div class="item"><button aria-expanded="false" aria-controls="d-${g}" aria-labelledby="h-${g}"></button>
+      <h4 id="h-${g}">${title}</h4><input type="checkbox" id="grp-${g}" aria-labelledby="h-${g}"><label for="grp-${g}">${title}</label>
+      <div class="grp" id="d-${g}" style="display:none"><p>${desc}</p>${subs.map((x, i) => `<h5>${x}</h5><input type="checkbox" id="s-${g}-${i}" aria-label="${x}"><label for="s-${g}-${i}">Switch Label</label>`).join("")}</div></div>`;
+    const PANEL_OT = `<div class="panel"><h2>Your choices</h2>
+      ${item("exp", "Experience cookies", "These cookies count visits and traffic sources to measure performance.", ["Store and/or access information on a device"])}
+      ${item("adv", "Personalised advertising", "Ads.", ["Use limited data to select advertising", "Create profiles for personalised advertising"])}
+      <button class="s">Confirm my choices</button></div>`;
+    found.manageEl.addEventListener("click", () => {
+        doc.querySelector("#dialog").insertAdjacentHTML("beforeend", PANEL_OT);
+        doc.querySelectorAll(".item>button").forEach(b => b.addEventListener("click", () => {
+            doc.getElementById(b.getAttribute("aria-controls")).style.display = "block"; b.setAttribute("aria-expanded", "true");
+        }));
+    });
+    const opened = await exploreOptions(found, doc, "shop.test", { timeout: 800, interval: 20 });
+    assert.ok(opened, "options read");
+    const tg = opened.analysis.toggles;
+    assert.deepEqual(tg.map(t => t.label), ["Experience cookies", "Store and/or access information on a device", "Personalised advertising",
+        "Use limited data to select advertising", "Create profiles for personalised advertising"]);
+    assert.deepEqual(tg.map(t => t.parent), [undefined, 0, undefined, 2, 2]);
+    assert.deepEqual(tg.map(t => t.type), ["B", "B", "F", "F", "F"]);
+    assert.ok(validate(opened.rule), JSON.stringify(validate.errors));
+    const open = opened.rule[opened.name].methods.find(m => m.name === "OPEN_OPTIONS").action;
+    assert.equal(open.actions.filter(a => a.type === "click").length, 3); // manage + two expanders
+});

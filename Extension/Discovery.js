@@ -601,6 +601,13 @@ export async function exploreOptions(result, doc = document, hostname = location
     }
     if (!panel) return null;
 
+    // Groups the page keeps closed (an accordion of sub-purposes): open them and read what is inside.
+    const expanded = await expandSections(panel, doc, { timeout, interval });
+    if (expanded) {
+        const built = ruleFromExpanded(result, expanded, panel, hostname);
+        if (built) return built;
+    }
+
     const opened = generateRule(panel, hostname);
     if (!opened) return null;
     const open = opened.rule[opened.name].methods;
@@ -620,6 +627,86 @@ export async function exploreOptions(result, doc = document, hostname = location
     const rule = { [result.name]: { detectors: first.detectors, methods } };
     const analysis = { ...opened.analysis, manage: manageText, bannerSelector, confidence: Math.min(opened.analysis.confidence, 0.85) };
     return { name: result.name, rule, analysis, banner, panel };
+}
+
+const COLLAPSED = "[aria-expanded='false'], summary";
+
+/** The control that opens the closed section holding this toggle: the nearest collapsed control among its ancestors' descendants. */
+function expanderFor(input, panel) {
+    for (let n = input.parentElement; n && n !== panel.parentElement; n = n.parentElement) {
+        const found = Array.from(n.querySelectorAll(COLLAPSED)).filter(c => !c.contains(input) || c.tagName === "SUMMARY");
+        // Prefer a control that names this section through aria-controls.
+        const named = found.find(c => { const id = c.getAttribute("aria-controls"); const t = id && n.ownerDocument.getElementById(id); return t && t.contains(input); });
+        const pick = named || found.find(c => !c.closest("[aria-hidden='true']") && !inClosedSection(c));
+        if (pick) return pick;
+    }
+    return null;
+}
+
+/**
+ * Open every closed section of an options panel so its switches can be read. Returns null when nothing was closed,
+ * else { toggles: [{el, child}], reveals: [{el, selector}], save } with selectors taken before each click.
+ */
+export async function expandSections(panel, doc, { timeout = 3000, interval = 150 } = {}) {
+    const all = classifyToggles(panel).filter(t => !t.necessary);
+    const closed = new Set(all.filter(t => inClosedSection(t.el)).map(t => t.el));
+    if (!closed.size) return null;
+
+    const reveals = [];
+    const seen = new Set();
+    for (const el of closed) {
+        const ex = expanderFor(el, panel);
+        if (!ex || seen.has(ex)) continue;
+        seen.add(ex);
+        reveals.push({ el: ex, selector: uniqueSelector(ex, panel) });
+    }
+    if (!reveals.length) return null;
+    for (const r of reveals) r.el.click();
+
+    for (const end = Date.now() + timeout; Date.now() < end;) {
+        await sleep(interval);
+        if (Array.from(closed).every(el => !inClosedSection(el))) break;
+    }
+    const buttons = classifyButtons(panel);
+    return {
+        toggles: all.map(t => ({ el: t.el, type: "X", child: closed.has(t.el), shown: !inClosedSection(t.el) })).filter(t => t.shown || !t.child),
+        reveals,
+        save: (buttons.save[0] || buttons.rejectAll[0] || buttons.acceptAll[0] || {}).el,
+        opened: Array.from(closed).filter(el => !inClosedSection(el)).length
+    };
+}
+
+/** Build the finished rule from an options panel whose sections were expanded, reusing the taught-rule builder. */
+function ruleFromExpanded(result, expanded, panel, hostname) {
+    if (!expanded.opened) return null;
+    const banner = result.banner;
+    const bannerSelector = result.analysis.bannerSelector;
+    const panelSelector = uniqueSelector(panel);
+    const scoped = banner.isConnected && (panel === banner || banner.contains(panel)) ? null : panel;
+    const info = new Map();
+    const note = (el, selector) => info.set(el, { where: scoped ? "panel" : "banner", selector });
+    expanded.reveals.forEach(r => note(r.el, r.selector));
+    const root = scoped || panel;
+    expanded.toggles.forEach(t => note(t.el, uniqueSelector(t.el, root)));
+    if (expanded.save) note(expanded.save, uniqueSelector(expanded.save, root));
+
+    const picks = {
+        banner, bannerSelector, panel: scoped, panelSelector: scoped ? panelSelector : null, info,
+        manage: result.manageEl, toggles: expanded.toggles, reveals: expanded.reveals, save: expanded.save
+    };
+    if (result.manageEl) info.set(result.manageEl, { where: "banner", selector: uniqueSelector(result.manageEl, banner) });
+    const built = generateRuleFromPicks(picks, hostname);
+    if (!built) return null;
+    // Detect the original banner, not whatever the page swapped it for.
+    const first = result.rule[result.name];
+    const body = built.rule[built.name];
+    body.detectors = first.detectors;
+    const name = result.name;
+    return {
+        name, rule: { [name]: body },
+        analysis: { ...built.analysis, manage: result.analysis.manage, confidence: 0.85 },
+        banner, panel
+    };
 }
 
 /** Rule for the page that "more options" navigates to: this page only opens the options page, nothing else. */
