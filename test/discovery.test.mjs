@@ -7,7 +7,7 @@ import Ajv from "ajv";
 // Minimal CSS.escape (jsdom lacks it; real browsers have it).
 globalThis.CSS = { escape: (s) => String(s).replace(/([^a-zA-Z0-9_\u00A0-\uFFFF-])/g, "\\$1").replace(/^(\d)/, "\\3$1 ") };
 
-const { discover, classifyButtons, classifyToggles } = await import("../Extension/Discovery.js");
+const { discover, classifyButtons, classifyToggles, exploreOptions, openerRule } = await import("../Extension/Discovery.js");
 const schema = JSON.parse(fs.readFileSync(new URL("../rules.schema.json", import.meta.url)));
 const ajv = new Ajv({ strict: false, allErrors: true });
 const validate = ajv.compile(schema);
@@ -124,4 +124,89 @@ test("'Cookie settings' is an options button, 'Save settings' is save", () => {
     assert.deepEqual(b.manage.map(x => x.text), ["Cookie settings"]);
     assert.deepEqual(b.save.map(x => x.text), ["Save settings"]);
     assert.deepEqual(b.acceptAll.map(x => x.text), ["Accept and save"]);
+});
+
+// Each button is the first (and only) <button> inside its own wrapper, so a leaf :nth-of-type(1) matches both.
+const YOUTUBE_LIKE = `
+<div id="dialog" style="position:fixed;z-index:999">
+  <p>Before you continue, we use cookies and data to deliver and maintain our services.</p>
+  <div class="eom-buttons"><div class="eom-button-row">
+    <ytd-button-renderer class="r"><yt-button-shape><button class="filled">Reject all</button></yt-button-shape></ytd-button-renderer>
+    <ytd-button-renderer class="r"><yt-button-shape><button class="filled">Accept all</button></yt-button-shape></ytd-button-renderer>
+  </div></div>
+</div>`;
+
+test("accept and reject get different selectors, each resolving to its own button", () => {
+    const doc = load(YOUTUBE_LIKE);
+    const found = discover(doc, "video.test");
+    assert.ok(found);
+    const action = found.rule[found.name].methods.find(m => m.name === "SAVE_CONSENT").action.actions[0];
+    const parent = doc.querySelector(action.trueAction.parent.selector);
+    const pick = (a) => parent.querySelectorAll(a.target.selector);
+    assert.notEqual(action.trueAction.target.selector, action.falseAction.target.selector);
+    assert.equal(pick(action.trueAction).length, 1);
+    assert.equal(pick(action.falseAction).length, 1);
+    assert.equal(pick(action.trueAction)[0].textContent, "Accept all");
+    assert.equal(pick(action.falseAction)[0].textContent, "Reject all");
+});
+
+test("a generic banner selector (#dialog) is narrowed with a text filter", () => {
+    const doc = load(YOUTUBE_LIKE);
+    const found = discover(doc, "video.test");
+    const det = found.rule[found.name].detectors[0];
+    assert.equal(det.presentMatcher[0].target.selector, "#dialog");
+    assert.equal(det.presentMatcher[0].target.textFilter, "cookies");
+    assert.equal(det.showingMatcher[0].target.textFilter, "cookies");
+    assert.ok(validate(found.rule), JSON.stringify(validate.errors));
+});
+
+const MORE_OPTIONS = `
+<div id="dialog" style="position:fixed;z-index:999">
+  <p>We use cookies and data to deliver our services.</p>
+  <button class="r">Reject all</button><button class="a">Accept all</button><button class="m">More options</button>
+</div>`;
+
+const PANEL = `
+  <div class="panel">
+    <h2>Cookie choices</h2>
+    <label><input type="checkbox" id="x1"> Analytics and statistics</label>
+    <label><input type="checkbox" id="x2"> Personalised advertising</label>
+    <button class="s">Confirm choices</button>
+  </div>`;
+
+test("banner with 'More options' and no toggles asks to open it", () => {
+    const doc = load(MORE_OPTIONS);
+    const found = discover(doc, "video.test");
+    assert.equal(found.needsOptions, true);
+    assert.equal(found.manageEl.textContent, "More options");
+});
+
+test("exploreOptions opens the control and builds OPEN_OPTIONS + DO_CONSENT + SAVE_CONSENT", async () => {
+    const doc = load(MORE_OPTIONS);
+    const found = discover(doc, "video.test");
+    found.manageEl.addEventListener("click", () => doc.querySelector("#dialog").insertAdjacentHTML("beforeend", PANEL));
+    const opened = await exploreOptions(found, doc, "video.test", { timeout: 800, interval: 20 });
+    assert.ok(opened, "options read");
+    const methods = opened.rule[opened.name].methods;
+    assert.deepEqual(methods.map(m => m.name).sort(), ["DO_CONSENT", "HIDE_CMP", "OPEN_OPTIONS", "SAVE_CONSENT"]);
+    assert.deepEqual(methods.find(m => m.name === "DO_CONSENT").action.consents.map(c => c.type).sort(), ["B", "F"]);
+    assert.equal(opened.analysis.manage, "More options");
+    assert.ok(validate(opened.rule), JSON.stringify(validate.errors));
+    // OPEN_OPTIONS must resolve against the page as it was before the click (button now still present here).
+    const open = methods.find(m => m.name === "OPEN_OPTIONS").action;
+    assert.equal(doc.querySelector(open.parent.selector).querySelectorAll(open.target.selector)[0].textContent, "More options");
+});
+
+test("exploreOptions returns null when nothing readable appears", async () => {
+    const doc = load(MORE_OPTIONS);
+    const found = discover(doc, "video.test");
+    assert.equal(await exploreOptions(found, doc, "video.test", { timeout: 150, interval: 20 }), null);
+});
+
+test("openerRule only opens the options, with empty consent and save steps", () => {
+    const doc = load(MORE_OPTIONS);
+    const found = discover(doc, "video.test");
+    const op = openerRule(found);
+    assert.deepEqual(op.rule[op.name].methods.map(m => m.name), ["OPEN_OPTIONS", "DO_CONSENT", "SAVE_CONSENT"]);
+    assert.ok(validate(op.rule), JSON.stringify(validate.errors));
 });

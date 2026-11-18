@@ -114,9 +114,29 @@ export function uniqueSelector(el, root = null) {
         if (matchesOnlyEl(candidate)) return candidate;
         node = node.parentElement;
     }
-    // Fall back to nth-of-type on the leaf.
-    const idx = Array.from(el.parentElement?.children || []).filter(c => c.tagName === el.tagName).indexOf(el) + 1;
-    return `${parts.slice(0, -1).concat(`${parts[parts.length - 1]}:nth-of-type(${idx})`).join(" ")}`;
+    // Fall back to a structural path (nth-of-type at every level): unique by construction.
+    const segs = [];
+    const docEl = el.ownerDocument.documentElement;
+    for (let n = el; n && n.nodeType === 1 && n !== docEl; n = n.parentElement) {
+        const tag = n.tagName.toLowerCase();
+        const sibs = n.parentElement ? Array.from(n.parentElement.children).filter(c => c.tagName === n.tagName) : [n];
+        segs.unshift(sibs.length > 1 ? `${tag}:nth-of-type(${sibs.indexOf(n) + 1})` : tag);
+    }
+    // Shorten from the top while the selector still matches only this element.
+    while (segs.length > 1 && matchesOnlyEl(segs.slice(1).join(" > "))) segs.shift();
+    return segs.join(" > ");
+}
+
+const GENERIC_SELECTOR = /^(#(dialog|modal|popup|overlay|banner|container|wrapper|content|root|app|main|window)|(div|section|aside|dialog|body|main))$/i;
+
+/** presentMatcher/showingMatcher target for a banner; generic selectors get a text filter so they only match cookie banners. */
+function bannerTarget(banner, selector, extra = {}) {
+    const target = { selector, ...extra };
+    if (GENERIC_SELECTOR.test(selector)) {
+        const word = (cleanText(banner).match(BANNER_WORDS) || [])[0];
+        if (word) target.textFilter = word.toLowerCase();
+    }
+    return target;
 }
 
 // ---------- Banner detection ----------
@@ -284,6 +304,7 @@ export function generateRule(banner, hostname) {
         // Binary path: choose accept-all or reject-all depending on the user's settings.
         analysis.toggles = [];
         const actions = [];
+        if (accept && reject && uniqueSelector(accept.el, banner) === uniqueSelector(reject.el, banner)) return null;
         if (accept && reject) {
             actions.push({
                 type: "ifallowall",
@@ -315,14 +336,17 @@ export function generateRule(banner, hostname) {
     const rule = {
         [name]: {
             detectors: [{
-                presentMatcher: [{ type: "css", target: { selector: bannerSelector } }],
-                showingMatcher: [{ type: "css", target: { selector: bannerSelector, displayFilter: true } }]
+                presentMatcher: [{ type: "css", target: bannerTarget(banner, bannerSelector) }],
+                showingMatcher: [{ type: "css", target: bannerTarget(banner, bannerSelector, { displayFilter: true }) }]
             }],
             methods
         }
     };
 
-    return { name, rule, analysis };
+    const result = { name, rule, analysis };
+    // A control that opens more options but no visible toggles: the runner should offer to open it and read the choices.
+    if (manage && toggles.length === 0) { result.needsOptions = true; result.manageEl = manage.el; }
+    return result;
 }
 
 /** Discover the best candidate and generate a rule. */
@@ -390,8 +414,8 @@ export function generateRuleFromPicks(picks, hostname) {
         rule: {
             [name]: {
                 detectors: [{
-                    presentMatcher: [{ type: "css", target: { selector: bannerSelector } }],
-                    showingMatcher: [{ type: "css", target: { selector: bannerSelector, displayFilter: true } }]
+                    presentMatcher: [{ type: "css", target: bannerTarget(banner, bannerSelector) }],
+                    showingMatcher: [{ type: "css", target: bannerTarget(banner, bannerSelector, { displayFilter: true }) }]
                 }],
                 methods
             }
@@ -404,6 +428,80 @@ export function generateRuleFromPicks(picks, hostname) {
             confidence: 1
         },
         banner
+    };
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function panelWithToggles(root) {
+    return classifyToggles(root).some(t => !t.necessary && !t.hidden);
+}
+
+/** After clicking "more options": find the container that now shows the toggles. */
+export function findOptionsPanel(doc, original) {
+    if (original && original.isConnected && visible(original) && panelWithToggles(original)) return original;
+    for (const c of findBannerCandidates(doc)) if (panelWithToggles(c.el)) return c.el;
+    for (const d of doc.querySelectorAll("dialog, [role='dialog'], [role='alertdialog'], [aria-modal='true']")) {
+        if (visible(d) && panelWithToggles(d)) return d;
+    }
+    return null;
+}
+
+/**
+ * Click the banner's "more options" control, wait for toggles to appear, and build one rule:
+ * detector from the original banner, OPEN_OPTIONS + DO_CONSENT + SAVE_CONSENT from what the opened panel shows.
+ * Returns null if nothing usable appears (e.g. the control navigates away, or reveals no toggles).
+ */
+export async function exploreOptions(result, doc = document, hostname = location.hostname, { timeout = 3000, interval = 150 } = {}) {
+    const banner = result.banner;
+    const bannerSelector = result.analysis.bannerSelector;
+    // Selector must be computed before the click changes the DOM.
+    const openAction = { type: "click", parent: { selector: bannerSelector }, target: sel(result.manageEl, banner) };
+    const manageText = result.analysis.manage;
+
+    result.manageEl.click();
+    let panel = null;
+    for (const end = Date.now() + timeout; Date.now() < end && !panel;) {
+        await sleep(interval);
+        panel = findOptionsPanel(doc, banner);
+    }
+    if (!panel) return null;
+
+    const opened = generateRule(panel, hostname);
+    if (!opened) return null;
+    const open = opened.rule[opened.name].methods;
+    const consent = open.find(m => m.name === "DO_CONSENT");
+    if (!consent || consent.action.type !== "consent") return null;
+
+    const first = result.rule[result.name];
+    const hides = [{ type: "hide", target: { selector: bannerSelector } }];
+    const panelHide = open.find(m => m.name === "HIDE_CMP");
+    if (panelHide && panelHide.action.target.selector !== bannerSelector) hides.push(panelHide.action);
+
+    const methods = [
+        { name: "HIDE_CMP", action: hides.length === 1 ? hides[0] : { type: "list", actions: hides } },
+        { name: "OPEN_OPTIONS", action: openAction },
+        ...open.filter(m => m.name === "DO_CONSENT" || m.name === "SAVE_CONSENT")
+    ];
+    const rule = { [result.name]: { detectors: first.detectors, methods } };
+    const analysis = { ...opened.analysis, manage: manageText, bannerSelector, confidence: Math.min(opened.analysis.confidence, 0.85) };
+    return { name: result.name, rule, analysis, banner, panel };
+}
+
+/** Rule for the page that "more options" navigates to: this page only opens the options page, nothing else. */
+export function openerRule(result) {
+    const first = result.rule[result.name];
+    const name = result.name + ":open";
+    return {
+        name,
+        rule: { [name]: {
+            detectors: first.detectors,
+            methods: [
+                { name: "OPEN_OPTIONS", action: { type: "click", parent: { selector: result.analysis.bannerSelector }, target: sel(result.manageEl, result.banner) } },
+                { name: "DO_CONSENT" },
+                { name: "SAVE_CONSENT" }
+            ]
+        } }
     };
 }
 
