@@ -113,6 +113,7 @@ async function reviewAndSave(ctx, result, dry) {
     await chrome.runtime.sendMessage("AddCustomRule|" + JSON.stringify(result.rule));
     if (result.openerRule) await chrome.runtime.sendMessage("AddCustomRule|" + JSON.stringify(result.openerRule));
 
+    started = true; // the page is now mid-way through the new rule: do not discover again on what is left of it
     if (result.reloadAfterSave) { location.reload(); return; }
 
     // Run it straight away so the user sees it work rather than reloading.

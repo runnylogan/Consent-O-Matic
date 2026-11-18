@@ -346,3 +346,12 @@ test("revealed toggles take their group's category and get a readable label", ()
     assert.equal(out.analysis.toggles[toggles.findIndex(x => x.el.id === "n1")].parent, toggles.findIndex(x => x.el.id === "g1"));
     assert.equal(displayLabel(q("#n1")), "Store and/or access information on a device");
 });
+
+test("a vendor list button is not treated as a 'more options' control", () => {
+    const doc = load(`<div id="b" role="dialog" style="position:fixed"><p>We use cookies and similar technologies</p>
+        <button>Accept all</button><button>Reject all</button><button>List of vendors</button></div>`);
+    const found = discover(doc, "shop.test");
+    assert.ok(found);
+    assert.equal(found.needsOptions, undefined);
+    assert.equal(found.analysis.manage, undefined);
+});

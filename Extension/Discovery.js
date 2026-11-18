@@ -8,6 +8,8 @@ const BANNER_WORDS = /\b(cookie|cookies|consent|gdpr|privacy|tracking|ccpa|cmp)\
 const BUTTON_SELECTOR = "button, [role='button'], a[href], input[type='button'], input[type='submit'], summary";
 const TOGGLE_SELECTOR = "input[type='checkbox'], input[type='radio'], [role='switch'], [role='checkbox']";
 
+const VENDOR_LIST = /\b(vendors?|partners?|suppliers?|third[- ]parties|companies)\b/i;
+
 const TEXT = {
     acceptAll: /\b(accept|allow|agree|consent to|got it|ok(ay)?|i understand|yes,? i)\b.*\b(all|everything)?\b|\b(accept|agree|allow all|alles akzeptieren|tout accepter|accepter|accetta|aceptar|akzeptieren|zustimmen)\b/i,
     rejectAll: /\b(reject|decline|deny|refuse|disagree|no,? thanks|only (necessary|essential)|necessary only|essential only|continue without|ablehnen|refuser|tout refuser|rifiuta|rechazar|nur (notwendige|erforderliche))\b/i,
@@ -24,6 +26,32 @@ const CATEGORY_RULES = [
     ["E", /\b(content|social media|social|video|embedded|media|recommend|inhalte|contenu)/i],
     ["D", /\b(storage|stor(e|ing)( and\/or access)?|access(ing)? (to )?information|information (on|stored on) (a|your) device|on your device|device information|geolocation|information storage|speicher)/i]
 ];
+
+/**
+ * Is this box actually on screen: not display:none, not aria-hidden/inert, and not squeezed out or clipped by a collapsed
+ * ancestor (accordion sections are often just height:0 with overflow hidden). Ignores the element's own opacity.
+ */
+function shownBox(el) {
+    const view = el.ownerDocument.defaultView;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) return false;
+    for (let n = el; n && n.nodeType === 1 && n !== el.ownerDocument.documentElement; n = n.parentElement) {
+        const cs = view.getComputedStyle(n);
+        if (cs.display === "none" || cs.visibility === "hidden") return false;
+        if (n.getAttribute("aria-hidden") === "true" || n.hasAttribute("inert") || n.hidden) return false;
+        if (n !== el && (cs.overflowY !== "visible" || cs.overflowX !== "visible")) {
+            const nr = n.getBoundingClientRect();
+            if (nr.height < 2 || nr.width < 2) return false;
+            if (r.bottom <= nr.top || r.top >= nr.bottom || r.right <= nr.left || r.left >= nr.right) return false;
+        }
+    }
+    return true;
+}
+
+/** A toggle counts as showing if it, its label or its wrapper is: switch inputs are often invisible with a styled sibling. */
+export function toggleShown(input) {
+    return [input, input.closest("label"), input.parentElement].some(c => c && shownBox(c));
+}
 
 /**
  * The banner or panel a click landed in: nearest fixed/sticky/dialog ancestor, else the largest ancestor that is still
@@ -249,7 +277,8 @@ export function displayLabel(el) {
     const label = labelFor(el);
     if (label && !GENERIC_LABEL.test(label.trim())) return label;
     const near = contextFor(el);
-    return near ? near.slice(0, 60) : label;
+    const tidy = near.replace(/^[+\-\u2212\u2013\u25b8\u25be\s]+/, "");
+    return tidy ? tidy.slice(0, 60) : label;
 }
 
 /** Best-guess consent type (A,B,D,E,F or X) from a toggle's label, then from the description next to it. */
@@ -300,7 +329,8 @@ export function generateRule(banner, hostname) {
     const accept = first(buttons.acceptAll);
     const reject = first(buttons.rejectAll);
     const save = first(buttons.save);
-    const manage = first(buttons.manage);
+    // A vendor or partner list is a separate screen of per-company switches, not the purposes the user chooses between.
+    const manage = first(buttons.manage.filter(b => !VENDOR_LIST.test(b.text)));
 
     const analysis = {
         bannerSelector,

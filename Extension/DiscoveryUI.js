@@ -1,4 +1,4 @@
-import { CONSENT_TYPE_NAMES, generateRuleFromPicks, discover, visible, uniqueSelector, containerOf, bannerTarget } from "./Discovery.js";
+import { CONSENT_TYPE_NAMES, generateRuleFromPicks, discover, visible, uniqueSelector, containerOf, bannerTarget, toggleShown } from "./Discovery.js";
 
 // All UI lives in a closed shadow root so page CSS cannot break it and it cannot break the page.
 function createHost() {
@@ -171,7 +171,7 @@ export function teachMode(hostname) {
             { key: "accept", prompt: "Click the “Accept all” button (or Skip)", skippable: true }
         ];
         const picks = { toggles: [], reveals: [], info: new Map(), problems: [] };
-        let browsing = false;
+        let browsing = false, revealsSincePick = 0;
         let i = 0, hovered = null, removeHover = () => {};
 
         const { host, shadow } = createHost();
@@ -239,7 +239,7 @@ export function teachMode(hostname) {
         const reveal = (t) => {
             // Toggles that only appear after this point belong to the group that was opened.
             if (!picks.visibleBeforeReveal) {
-                picks.visibleBeforeReveal = new Set(Array.from(document.querySelectorAll(TOGGLE)).filter(visible));
+                picks.visibleBeforeReveal = new Set(Array.from(document.querySelectorAll(TOGGLE)).filter(toggleShown));
             }
             const el = t.closest("button,[role='button'],a,summary,[aria-expanded],[aria-controls]") || t;
             if (!picks.panel && !picks.banner.contains(el) && picks.manage) {
@@ -250,6 +250,7 @@ export function teachMode(hostname) {
             if (again >= 0) { picks.reveals.splice(again, 1); return; } // clicked twice: net no change
             record(el);
             picks.reveals.push({ el });
+            revealsSincePick++;
         };
         function onClick(e) {
             if (inUi(e.target)) return;
@@ -285,7 +286,11 @@ export function teachMode(hostname) {
                     picks.panel = containerOf(input);
                     picks.panelSelector = uniqueSelector(picks.panel);
                 }
-                if (!picks.toggles.find(x => x.el === input)) { record(input); picks.toggles.push({ el: input, type: "X", child: !!picks.visibleBeforeReveal && !picks.visibleBeforeReveal.has(input) }); }
+                if (!picks.toggles.find(x => x.el === input)) { record(input); picks.toggles.push({
+                    el: input, type: "X",
+                    // Revealed by an expand: it was not on screen when the first expand happened, or it was picked straight after one.
+                    child: !!picks.visibleBeforeReveal && (!picks.visibleBeforeReveal.has(input) || (revealsSincePick > 0 && picks.toggles.length > 0))
+                }); revealsSincePick = 0; }
                 render();
             } else {
                 const el = t.closest("button,[role='button'],a,input") || t;
