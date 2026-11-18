@@ -101,6 +101,8 @@ chrome.runtime.onMessage.addListener(function (message, sender, reply) {
 
             tabStatusMap.set(sender.tab.id, STATUS.HANDLED);
 
+            recordActivity(json, sender.tab.url);
+
             GDPRConfig.getStatistics().then((entries)=>{
                 entries.clicks += json.clicks;
                 
@@ -200,6 +202,19 @@ function fetchRules(forceUpdate) {
 
     return rulePromise;
 
+}
+
+// Recent activity for the About page: which rule handled which site, and the settings in force at the time.
+const ACTIVITY_KEY = "handledLog";
+const ACTIVITY_MAX = 30;
+function recordActivity(json, tabUrl) {
+    let host = "";
+    try { host = new URL(json.url || tabUrl).hostname; } catch (e) { /* keep empty */ }
+    const entry = { time: Date.now(), host, cmp: json.cmp, source: json.source || "", clicks: json.clicks || 0, consentTypes: json.consentTypes || {} };
+    chrome.storage.local.get({ [ACTIVITY_KEY]: [] }, (r) => {
+        const log = [entry, ...r[ACTIVITY_KEY]].slice(0, ACTIVITY_MAX);
+        chrome.storage.local.set({ [ACTIVITY_KEY]: log });
+    });
 }
 
 const isRule = (v) => v && typeof v === "object" && Array.isArray(v.detectors);

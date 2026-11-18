@@ -427,7 +427,15 @@ input[type="url"] {
         tr:not(:first-child):nth-child(odd) { background: var(--surface-2); }
         td { text-align: center; }
         th { font-weight: 500; }
+        &.activity {
+            td, th { text-align: left; vertical-align: top; font-size: .9em; }
+            td:nth-child(1), td:nth-child(2) { white-space: nowrap; }
+            td:nth-child(1) { color: var(--muted); }
+            td:nth-child(3) { overflow-wrap: break-word; }
+        }
     }
+    .activityheading { margin: 1.5rem 1.5rem .25rem; }
+    .activitylede { margin: 0 1.5rem .75rem; color: var(--muted); }
 }
 
 @media (prefers-reduced-motion: reduce) {

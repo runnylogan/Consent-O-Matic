@@ -56,6 +56,8 @@ async function contentScriptRunner() {
                                             result.cmp = evt.cmpName;
                                             result.clicks = evt.clicks;
                                             result.url = url;
+                                            result.source = Object.prototype.hasOwnProperty.call(customRules, evt.cmpName) ? "custom rule" : "downloaded list";
+                                            result.consentTypes = consentTypes;
         
                                             chrome.runtime.sendMessage("HandledCMP|"+JSON.stringify(result));
                                         } else if(evt.error) {

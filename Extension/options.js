@@ -1,4 +1,5 @@
 import GDPRConfig from './GDPRConfig.js';
+import { CONSENT_TYPE_NAMES } from './Discovery.js';
 import Language from './Language.js';
 import { buildBackup, applyBackup, listSnapshots, getRemote, setRemote, pushRemote, restoreRemote, getRemoteStatus } from './Backup.js';
 
@@ -410,7 +411,42 @@ if (optionsUL){
         GDPRConfig.setDebugValues(debugFlags);
     }
 
+    function describeSettings(types) {
+        const names = Object.keys(CONSENT_TYPE_NAMES).filter((k) => k in types);
+        const allowed = names.filter((k) => types[k]).map((k) => CONSENT_TYPE_NAMES[k]);
+        const declined = names.filter((k) => !types[k]).map((k) => CONSENT_TYPE_NAMES[k]);
+        return (allowed.length ? "Allow: " + allowed.join(", ") : "Allow: nothing") + (declined.length ? " · Decline: " + declined.join(", ") : "");
+    }
+
+    function renderActivity() {
+        const table = document.querySelector("#activityTable");
+        table.querySelectorAll("tr:not(:first-child)").forEach((el) => el.remove());
+        chrome.storage.local.get({ handledLog: [] }, ({ handledLog }) => {
+            if (handledLog.length === 0) {
+                const tr = document.createElement("tr");
+                const td = document.createElement("td");
+                td.colSpan = 4;
+                td.textContent = "Nothing yet. Pages the extension handles will be listed here.";
+                tr.appendChild(td);
+                table.append(tr);
+                return;
+            }
+            handledLog.forEach((e) => {
+                const tr = document.createElement("tr");
+                const cells = [
+                    new Date(e.time).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }),
+                    e.host || "?",
+                    e.cmp + (e.source ? " (" + e.source + ")" : ""),
+                    describeSettings(e.consentTypes || {})
+                ];
+                cells.forEach((text) => { const td = document.createElement("td"); td.textContent = text; tr.appendChild(td); });
+                table.append(tr);
+            });
+        });
+    }
+
     function updateLog() {
+        renderActivity();
         aboutTable.querySelectorAll("tr:not(:first-child)").forEach((el) => {
             el.remove();
         });
@@ -435,6 +471,7 @@ if (optionsUL){
 
 
     document.querySelector("#clearLog").addEventListener("click", () => {
+        chrome.storage.local.set({ handledLog: [] });
         GDPRConfig.setStatistics({
             clicks: 0,
             cmps: {}
