@@ -1,4 +1,4 @@
-import { CONSENT_TYPE_NAMES, generateRuleFromPicks, discover, visible } from "./Discovery.js";
+import { CONSENT_TYPE_NAMES, generateRuleFromPicks, discover, visible, uniqueSelector } from "./Discovery.js";
 
 // All UI lives in a closed shadow root so page CSS cannot break it and it cannot break the page.
 function createHost() {
@@ -155,13 +155,13 @@ export function teachMode(hostname) {
     return new Promise((resolve) => {
         const steps = [
             { key: "banner", prompt: "Click anywhere inside the cookie banner", required: true },
-            { key: "manage", prompt: "Click the button that opens detailed options (or Skip)", skippable: true },
-            { key: "toggle", prompt: "Click each cookie toggle, then press Done", multi: true, skippable: true },
+            { key: "manage", prompt: "Click the button that opens detailed options. It will open as normal (or Skip)", skippable: true },
+            { key: "toggle", prompt: "Click each cookie toggle, then press Done. Clicks here only record the toggle", multi: true, skippable: true },
             { key: "save", prompt: "Click the button that saves or confirms the choices (or Skip)", skippable: true },
             { key: "reject", prompt: "Click the “Reject all” button (or Skip)", skippable: true },
             { key: "accept", prompt: "Click the “Accept all” button (or Skip)", skippable: true }
         ];
-        const picks = { toggles: [] };
+        const picks = { toggles: [], info: new Map() };
         let i = 0, hovered = null, removeHover = () => {};
 
         const { host, shadow } = createHost();
@@ -199,27 +199,52 @@ export function teachMode(hostname) {
             if (inUi(e.target)) return;
             removeHover(); hovered = e.target; removeHover = highlight(hovered);
         }
+        // Nearest fixed/dialog-like ancestor, else the element itself.
+        const containerOf = (t) => {
+            for (let n = t; n && n !== document.body; n = n.parentElement) {
+                if (/fixed|sticky/.test(getComputedStyle(n).position) || n.matches("dialog,[role='dialog'],[aria-modal='true']")) return n;
+            }
+            return t;
+        };
+        // Selectors are recorded now: opening the options can replace or remove the banner.
+        const record = (el) => {
+            const where = picks.panel && picks.panel.contains(el) && !picks.banner.contains(el) ? "panel" : "banner";
+            picks.info.set(el, { where, selector: uniqueSelector(el, where === "panel" ? picks.panel : picks.banner) });
+        };
         function onClick(e) {
             if (inUi(e.target)) return;
-            e.preventDefault(); e.stopPropagation();
             const s = steps[i];
             const t = e.target;
+            if (s.key === "manage") {
+                // Let the page open its options panel so its toggles can be picked next.
+                const link = t.closest("a[href]");
+                const leaves = link && !/^(#|javascript:)/i.test(link.getAttribute("href")) && link.target !== "_blank";
+                if (leaves) { e.preventDefault(); e.stopPropagation(); }
+                const el = t.closest("button,[role='button'],a,input") || t;
+                picks.manage = el; record(el);
+                next();
+                return;
+            }
+            e.preventDefault(); e.stopPropagation();
             if (s.key === "banner") {
-                // Climb to the nearest fixed/dialog-like ancestor, else the largest reasonable container.
-                let n = t, best = t;
-                while (n && n !== document.body) {
-                    const pos = getComputedStyle(n).position;
-                    if (/fixed|sticky/.test(pos) || n.matches("dialog,[role='dialog'],[aria-modal='true']")) { best = n; break; }
-                    n = n.parentElement;
-                }
-                picks.banner = best;
+                picks.banner = containerOf(t);
+                picks.bannerSelector = uniqueSelector(picks.banner);
                 next();
             } else if (s.key === "toggle") {
                 const input = t.matches("input") ? t : (t.querySelector("input[type='checkbox']") || t.closest("label")?.querySelector("input") || t);
-                if (!picks.toggles.find(x => x.el === input)) picks.toggles.push({ el: input, type: "X" });
+                if (!picks.panel && !picks.banner.contains(input)) {
+                    picks.panel = containerOf(input);
+                    picks.panelSelector = uniqueSelector(picks.panel);
+                }
+                if (!picks.toggles.find(x => x.el === input)) { record(input); picks.toggles.push({ el: input, type: "X" }); }
                 render();
             } else {
-                picks[s.key] = t.closest("button,[role='button'],a,input") || t;
+                const el = t.closest("button,[role='button'],a,input") || t;
+                if (!picks.panel && !picks.banner.contains(el) && el.isConnected && picks.toggles.length === 0) {
+                    picks.panel = containerOf(el);
+                    picks.panelSelector = uniqueSelector(picks.panel);
+                }
+                picks[s.key] = el; record(el);
                 next();
             }
         }

@@ -7,7 +7,7 @@ import Ajv from "ajv";
 // Minimal CSS.escape (jsdom lacks it; real browsers have it).
 globalThis.CSS = { escape: (s) => String(s).replace(/([^a-zA-Z0-9_\u00A0-\uFFFF-])/g, "\\$1").replace(/^(\d)/, "\\3$1 ") };
 
-const { discover, classifyButtons, classifyToggles, exploreOptions, openerRule } = await import("../Extension/Discovery.js");
+const { discover, classifyButtons, classifyToggles, exploreOptions, openerRule, generateRuleFromPicks, uniqueSelector } = await import("../Extension/Discovery.js");
 const schema = JSON.parse(fs.readFileSync(new URL("../rules.schema.json", import.meta.url)));
 const ajv = new Ajv({ strict: false, allErrors: true });
 const validate = ajv.compile(schema);
@@ -243,4 +243,33 @@ test("rule names cannot carry message separators or markup from page class names
     const doc = load(`<div class="a|b<c>" style="position:fixed"><p>We use cookies for analytics today.</p><button>Accept all</button><button>Reject all</button></div>`);
     const found = discover(doc, "x.test");
     assert.match(found.name, /^auto:x\.test:[A-Za-z0-9_-]+$/);
+});
+
+test("taught rule: toggles in a separate panel opened by the manage button are scoped to that panel", () => {
+    const doc = load(`
+        <div id="cmpbanner" style="position:fixed"><p>We use cookies</p><button id="show">Show purposes</button></div>
+        <div id="prefpanel" role="dialog"><label>Ads <input type="checkbox" id="ads"></label>
+            <label>Stats <input type="checkbox" id="stats"></label><button id="savebtn">Save choices</button></div>`);
+    const q = (s) => doc.querySelector(s);
+    const picks = { banner: q("#cmpbanner"), toggles: [], info: new Map() };
+    picks.bannerSelector = uniqueSelector(picks.banner);
+    picks.manage = q("#show"); picks.info.set(picks.manage, { where: "banner", selector: uniqueSelector(picks.manage, picks.banner) });
+    picks.panel = q("#prefpanel"); picks.panelSelector = uniqueSelector(picks.panel);
+    for (const id of ["#ads", "#stats"]) {
+        picks.info.set(q(id), { where: "panel", selector: uniqueSelector(q(id), picks.panel) });
+        picks.toggles.push({ el: q(id), type: id === "#ads" ? "F" : "B" });
+    }
+    picks.save = q("#savebtn"); picks.info.set(picks.save, { where: "panel", selector: uniqueSelector(picks.save, picks.panel) });
+    const out = generateRuleFromPicks(picks, "shop.test");
+    const methods = out.rule[out.name].methods;
+    assert.ok(validate(out.rule), JSON.stringify(validate.errors));
+    assert.equal(methods.find(m => m.name === "OPEN_OPTIONS").action.parent.selector, "#cmpbanner");
+    const consent = methods.find(m => m.name === "DO_CONSENT").action.consents[0];
+    assert.equal(consent.toggleAction.parent.selector, "#prefpanel");
+    assert.equal(methods.find(m => m.name === "SAVE_CONSENT").action.parent.selector, "#prefpanel");
+    assert.deepEqual(methods.find(m => m.name === "HIDE_CMP").action.actions.map(a => a.target.selector), ["#cmpbanner", "#prefpanel"]);
+    // Selectors were recorded up front, so the rule still resolves once the banner has been removed by the page.
+    q("#cmpbanner").remove();
+    const rule = JSON.parse(JSON.stringify(out.rule));
+    assertRuleResolves(doc, { ...rule, [out.name]: { methods: rule[out.name].methods.filter(m => m.name !== "OPEN_OPTIONS" && m.name !== "HIDE_CMP") } });
 });

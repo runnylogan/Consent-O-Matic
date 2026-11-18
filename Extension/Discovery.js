@@ -362,13 +362,21 @@ export function discover(doc = document, hostname = location.hostname) {
  */
 export function generateRuleFromPicks(picks, hostname) {
     const banner = picks.banner;
-    const bannerSelector = uniqueSelector(banner);
-    const parent = { selector: bannerSelector };
+    // Teach mode records selectors while the page is still as the user saw it (opening the options can replace the banner).
+    const bannerSelector = picks.bannerSelector || uniqueSelector(banner);
+    const panel = picks.panel && picks.panel !== banner && !banner.contains(picks.panel) ? picks.panel : null;
+    const panelSelector = panel ? (picks.panelSelector || uniqueSelector(panel)) : null;
+    const parents = { banner: { selector: bannerSelector }, panel: panelSelector && { selector: panelSelector } };
+    const act = (el) => {
+        const known = picks.info && picks.info.get(el);
+        const where = known ? known.where : (panel && panel.contains(el) && !banner.contains(el) ? "panel" : "banner");
+        const selector = known ? known.selector : uniqueSelector(el, where === "panel" ? panel : banner);
+        return { parent: parents[where] || parents.banner, target: { selector } };
+    };
+    const click = (el) => ({ type: "click", ...act(el) });
     const methods = [];
 
-    if (picks.manage) {
-        methods.push({ name: "OPEN_OPTIONS", action: { type: "click", parent, target: sel(picks.manage, banner) } });
-    }
+    if (picks.manage) methods.push({ name: "OPEN_OPTIONS", action: click(picks.manage) });
 
     if (picks.toggles && picks.toggles.length) {
         methods.push({
@@ -377,32 +385,30 @@ export function generateRuleFromPicks(picks, hostname) {
                 type: "consent",
                 consents: picks.toggles.map(t => ({
                     type: t.type || "X",
-                    matcher: { type: "checkbox", parent, target: sel(t.el, banner) },
-                    toggleAction: { type: "click", parent, target: sel(t.el, banner) }
+                    matcher: { type: "checkbox", ...act(t.el) },
+                    toggleAction: click(t.el)
                 }))
             }
         });
         const saveEl = picks.save || picks.reject || picks.accept;
-        if (saveEl) methods.push({ name: "SAVE_CONSENT", action: { type: "click", parent, target: sel(saveEl, banner) } });
+        if (saveEl) methods.push({ name: "SAVE_CONSENT", action: click(saveEl) });
     } else {
         const actions = [];
         if (picks.accept && picks.reject) {
-            actions.push({
-                type: "ifallowall",
-                trueAction: { type: "click", parent, target: sel(picks.accept, banner) },
-                falseAction: { type: "click", parent, target: sel(picks.reject, banner) }
-            });
+            actions.push({ type: "ifallowall", trueAction: click(picks.accept), falseAction: click(picks.reject) });
         } else if (picks.reject) {
-            actions.push({ type: "ifallownone", trueAction: { type: "click", parent, target: sel(picks.reject, banner) } });
+            actions.push({ type: "ifallownone", trueAction: click(picks.reject) });
         } else if (picks.accept) {
-            actions.push({ type: "ifallowall", trueAction: { type: "click", parent, target: sel(picks.accept, banner) } });
+            actions.push({ type: "ifallowall", trueAction: click(picks.accept) });
         } else {
             return null;
         }
         methods.push({ name: "SAVE_CONSENT", action: { type: "list", actions } });
     }
 
-    methods.push({ name: "HIDE_CMP", action: { type: "hide", target: { selector: bannerSelector } } });
+    const hides = [{ type: "hide", target: { selector: bannerSelector } }];
+    if (panelSelector) hides.push({ type: "hide", target: { selector: panelSelector } });
+    methods.push({ name: "HIDE_CMP", action: hides.length === 1 ? hides[0] : { type: "list", actions: hides } });
 
     const name = ruleNameFor(hostname, banner).replace("auto:", "taught:");
     return {
