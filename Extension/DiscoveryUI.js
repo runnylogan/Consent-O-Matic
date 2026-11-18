@@ -14,7 +14,10 @@ function createHost() {
               box-shadow:0 12px 40px rgba(16,24,40,.28),0 0 0 1px rgba(16,24,40,.08);overflow:hidden;font-size:13px;line-height:1.45}
         @media (prefers-color-scheme:dark){.card{background:#1d2129;color:#e8ebf2;box-shadow:0 12px 40px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.1)}
             .muted{color:#9aa3b5!important}.row{border-color:#2d3340!important}select,button.ghost{background:#272c37!important;color:#e8ebf2!important;border-color:#394052!important}}
-        header{display:flex;gap:10px;align-items:center;padding:14px 16px 6px}
+        header{display:flex;gap:10px;align-items:center;padding:14px 16px 6px;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+        header.dragging{cursor:grabbing}
+        header:focus-visible{outline:3px solid #9db4ff;outline-offset:-3px}
+        .grip{margin-left:auto;color:#98a2b3;font-size:16px;letter-spacing:-2px;line-height:1}
         .dot{width:28px;height:28px;border-radius:9px;background:linear-gradient(135deg,#4f7cff,#7b4fff);display:grid;place-items:center;color:#fff;font-weight:700}
         h1{font-size:14px;margin:0;font-weight:650}
         .muted{color:#667085;font-size:12px}
@@ -34,6 +37,48 @@ function createHost() {
     shadow.appendChild(style);
     document.documentElement.appendChild(host);
     return { host, shadow };
+}
+
+// Lets the panel be dragged by its header (mouse, touch or pen) or moved with the arrow keys,
+// so it can be shifted off the banner it is describing.
+function makeDraggable(host, handle) {
+    handle.setAttribute("tabindex", "0");
+    handle.setAttribute("role", "button");
+    handle.setAttribute("aria-label", "Move this panel (drag, or use the arrow keys)");
+    handle.append(el("span", { class: "grip", "aria-hidden": "true" }, "⠿"));
+    const place = (left, top) => {
+        const maxL = Math.max(0, window.innerWidth - host.offsetWidth);
+        const maxT = Math.max(0, window.innerHeight - host.offsetHeight);
+        host.style.right = "auto"; host.style.bottom = "auto";
+        host.style.left = Math.min(Math.max(0, left), maxL) + "px";
+        host.style.top = Math.min(Math.max(0, top), maxT) + "px";
+    };
+    handle.addEventListener("pointerdown", (e) => {
+        if (e.pointerType === "mouse" && e.button !== 0) return;
+        const r = host.getBoundingClientRect();
+        const dx = e.clientX - r.left, dy = e.clientY - r.top;
+        handle.setPointerCapture(e.pointerId);
+        handle.classList.add("dragging");
+        const move = (ev) => place(ev.clientX - dx, ev.clientY - dy);
+        const up = () => {
+            handle.classList.remove("dragging");
+            handle.removeEventListener("pointermove", move);
+            handle.removeEventListener("pointerup", up);
+            handle.removeEventListener("pointercancel", up);
+        };
+        handle.addEventListener("pointermove", move);
+        handle.addEventListener("pointerup", up);
+        handle.addEventListener("pointercancel", up);
+        e.preventDefault();
+    });
+    handle.addEventListener("keydown", (e) => {
+        const step = e.shiftKey ? 80 : 20;
+        const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+        if (!d) return;
+        e.preventDefault(); e.stopPropagation();
+        const r = host.getBoundingClientRect();
+        place(r.left + d[0], r.top + d[1]);
+    });
 }
 
 function el(tag, props = {}, ...children) {
@@ -97,6 +142,7 @@ export function showReview(result, dryRun) {
                 el("button", { class: "ghost", onclick: () => done("teach") }, "Teach it"),
                 el("button", { class: "ghost", onclick: () => done("dismiss") }, "Not now")));
         shadow.appendChild(card);
+        makeDraggable(host, card.querySelector("header"));
         save.focus();
         card.addEventListener("keydown", (e) => { if (e.key === "Escape") done("dismiss"); });
     });
@@ -123,9 +169,11 @@ export function teachMode(hostname) {
         const skip = el("button", { class: "ghost" }, "Skip");
         const done = el("button", {}, "Done");
         const cancel = el("button", { class: "ghost" }, "Cancel");
-        shadow.appendChild(el("div", { class: "card" },
+        const teachCard = el("div", { class: "card" },
             el("header", {}, el("div", { class: "dot" }, "C"), el("h1", {}, "Teach Consent-O-Matic")), msg,
-            el("footer", {}, skip, done, cancel)));
+            el("footer", {}, skip, done, cancel));
+        shadow.appendChild(teachCard);
+        makeDraggable(host, teachCard.querySelector("header"));
 
         const inUi = (t) => host.contains(t) || t === host;
         const cleanup = () => {
