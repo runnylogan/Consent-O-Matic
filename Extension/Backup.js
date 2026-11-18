@@ -53,12 +53,22 @@ export async function applyBackup(obj, mode = "merge", { settings = true } = {})
     await GDPRConfig.setCustomRuleLists(Object.assign({}, current, incoming));
 
     if (settings) {
+        // Settings come from a file or repository: accept only the shapes the extension itself writes.
         if (Array.isArray(obj.ruleLists)) {
+            const urls = obj.ruleLists.filter((u) => typeof u === "string" && /^https?:\/\//i.test(u));
             const existing = mode === "replace" ? [] : await GDPRConfig.getRuleLists();
-            await GDPRConfig.setRuleLists(Array.from(new Set([...existing, ...obj.ruleLists])));
+            await GDPRConfig.setRuleLists(Array.from(new Set([...existing, ...urls])));
         }
-        if (obj.consentValues) await GDPRConfig.setConsentValues(obj.consentValues);
-        if (obj.generalSettings) await GDPRConfig.setGeneralSettings(obj.generalSettings);
+        if (obj.consentValues && typeof obj.consentValues === "object") {
+            const cv = {};
+            for (const k of ["A", "B", "D", "E", "F", "X"]) if (typeof obj.consentValues[k] === "boolean") cv[k] = obj.consentValues[k];
+            await GDPRConfig.setConsentValues(Object.assign(await GDPRConfig.getConsentValues(), cv));
+        }
+        if (obj.generalSettings && typeof obj.generalSettings === "object") {
+            const gs = {};
+            for (const [k, v] of Object.entries(obj.generalSettings)) if (typeof v === "boolean") gs[k] = v;
+            await GDPRConfig.setGeneralSettings(Object.assign(await GDPRConfig.getGeneralSettings(), gs));
+        }
     }
     return Object.keys(incoming).length;
 }
@@ -125,7 +135,10 @@ export async function setRemote(cfg) {
     next.repo = String(next.repo || "").trim().replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "").replace(/\/$/, "");
     next.branch = String(next.branch || "main").trim() || "main";
     next.dir = String(next.dir || "").trim().replace(/^\/+|\/+$/g, "");
-    if (next.repo && !/^[\w.-]+\/[\w.-]+$/.test(next.repo)) throw new Error("Repository must look like owner/name");
+    if (next.repo && (!/^[\w.-]+\/[\w.-]+$/.test(next.repo) || next.repo.split("/").some((part) => /^\.+$/.test(part)))) {
+        throw new Error("Repository must look like owner/name");
+    }
+    if (next.dir.split("/").some((part) => part === "." || part === "..")) throw new Error("Folder must not contain . or .. segments");
     await localSet(REMOTE_KEY, next);
     await localSet(HASH_KEY, ""); // new target: push again even if content is unchanged
     return next;

@@ -154,8 +154,9 @@ test("a generic banner selector (#dialog) is narrowed with a text filter", () =>
     const doc = load(YOUTUBE_LIKE);
     const found = discover(doc, "video.test");
     const det = found.rule[found.name].detectors[0];
-    assert.equal(det.presentMatcher[0].target.selector, "#dialog");
-    assert.equal(det.presentMatcher[0].target.textFilter, "cookies");
+    const css = det.presentMatcher.find(m => m.type === "css");
+    assert.equal(css.target.selector, "#dialog");
+    assert.equal(css.target.textFilter, "cookies");
     assert.equal(det.showingMatcher[0].target.textFilter, "cookies");
     assert.ok(validate(found.rule), JSON.stringify(validate.errors));
 });
@@ -209,4 +210,37 @@ test("openerRule only opens the options, with empty consent and save steps", () 
     const op = openerRule(found);
     assert.deepEqual(op.rule[op.name].methods.map(m => m.name), ["OPEN_OPTIONS", "DO_CONSENT", "SAVE_CONSENT"]);
     assert.ok(validate(op.rule), JSON.stringify(validate.errors));
+});
+
+test("bundled custom-rules.json is schema-valid and overrides google_cwiz with a hide step", () => {
+    const bundled = JSON.parse(fs.readFileSync(new URL("../Extension/custom-rules.json", import.meta.url)));
+    const { $schema, ...rules } = bundled; // the schema itself does not allow its own $schema key
+    assert.ok(validate(rules), JSON.stringify(validate.errors));
+    const upstream = JSON.parse(fs.readFileSync(new URL("../rules/google_cwiz.json", import.meta.url))).google_cwiz;
+    const mine = bundled.google_cwiz;
+    const hide = mine.methods.find(m => m.name === "HIDE_CMP");
+    assert.equal(hide.action.type, "hide");
+    assert.deepEqual(mine.detectors, upstream.detectors, "same detector as upstream");
+    const strip = (r) => JSON.stringify(r.methods.filter(m => m.name !== "HIDE_CMP"));
+    assert.equal(strip(mine), strip(upstream), "everything except the hide step is identical to upstream");
+});
+
+test("generated rules are scoped to the site they were made for", () => {
+    const doc = load(BINARY);
+    const found = discover(doc, "www.example.co.uk");
+    const url = found.rule[found.name].detectors[0].presentMatcher.find(m => m.type === "url");
+    assert.ok(url && url.regexp === true, "has a url matcher");
+    const re = new RegExp(url.url[0]);
+    assert.ok(re.test("https://www.example.co.uk/page?x=1"));
+    assert.ok(re.test("https://www.example.co.uk:8443/"));
+    assert.ok(!re.test("https://www.example.co.uk.evil.test/"));
+    assert.ok(!re.test("https://evil.test/?u=https://www.example.co.uk/"));
+    assert.ok(!re.test("https://wwwXexample.co.uk/"), "dots are escaped");
+    assert.ok(validate(found.rule), JSON.stringify(validate.errors));
+});
+
+test("rule names cannot carry message separators or markup from page class names", () => {
+    const doc = load(`<div class="a|b<c>" style="position:fixed"><p>We use cookies for analytics today.</p><button>Accept all</button><button>Reject all</button></div>`);
+    const found = discover(doc, "x.test");
+    assert.match(found.name, /^auto:x\.test:[A-Za-z0-9_-]+$/);
 });

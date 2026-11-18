@@ -54,7 +54,7 @@ chrome.runtime.onMessage.addListener(function (message, sender, reply) {
         }
 
         case "DeleteCustomRule": {
-            let deleteRule = message.split("|")[1];
+            let deleteRule = message.substring(message.indexOf("|")+1);
 
             GDPRConfig.getCustomRuleLists().then((customRules)=>{
                 delete customRules[deleteRule];
@@ -95,7 +95,7 @@ chrome.runtime.onMessage.addListener(function (message, sender, reply) {
         }
 
         case "HandledCMP": {
-            let json = JSON.parse(message.split("|")[1]);
+            let json = JSON.parse(message.substring(message.indexOf("|")+1));
 
             setBadgeCheckmark("\u2714", sender.tab.id);
 
@@ -307,7 +307,7 @@ dropGistConfig().catch((e) => console.warn("Could not clear old gist settings:",
 
 
 // Seed the custom rules bundled with the extension (custom-rules.json) into storage, once per bundle version.
-const BUNDLED_RULES_VERSION = 1;
+const BUNDLED_RULES_VERSION = 2; // 2: google_cwiz override with a working hide step
 (async () => {
     try {
         const bundled = await (await fetch(chrome.runtime.getURL("custom-rules.json"))).json();

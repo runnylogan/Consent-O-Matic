@@ -78,7 +78,10 @@ async function takePending() {
     const r = await new Promise((resolve) => chrome.storage.local.get({ [PENDING_KEY]: null }, resolve));
     await new Promise((resolve) => chrome.storage.local.remove(PENDING_KEY, resolve));
     const p = r[PENDING_KEY];
-    return p && Date.now() - p.ts < PENDING_MS ? p : null;
+    if (!p || Date.now() - p.ts >= PENDING_MS) return null;
+    // Only when we arrived from the page that opened it: another tab must not pick up this opener rule.
+    try { if (new URL(document.referrer).origin !== p.fromOrigin) return null; } catch (e) { return null; }
+    return p;
 }
 
 async function waitForCandidate(tries = 12, interval = 750) {
@@ -149,7 +152,7 @@ export async function runDiscovery(ctx) {
         if (choice === "no") { await dismissHost(host); return; }
         if (choice === "open") {
             const opener = openerRule(result);
-            await setPending({ ts: Date.now(), openerRule: opener.rule }); // survives if the control navigates to another page
+            await setPending({ ts: Date.now(), fromOrigin: location.origin, openerRule: opener.rule }); // survives if the control navigates to another page
             const opened = await exploreOptions(result);
             await new Promise((resolve) => chrome.storage.local.remove(PENDING_KEY, resolve));
             if (opened) {

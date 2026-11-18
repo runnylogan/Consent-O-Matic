@@ -129,6 +129,13 @@ export function uniqueSelector(el, root = null) {
 
 const GENERIC_SELECTOR = /^(#(dialog|modal|popup|overlay|banner|container|wrapper|content|root|app|main|window)|(div|section|aside|dialog|body|main))$/i;
 
+const escapeRegExp = (t) => String(t).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Generated rules only apply on the site they were made for: the selectors come from one page and must not fire elsewhere. */
+function hostMatcher(hostname) {
+    return { type: "url", regexp: true, url: ["^[a-z-]+://" + escapeRegExp(hostname) + "(:\\d+)?([/?#]|$)"] };
+}
+
 /** presentMatcher/showingMatcher target for a banner; generic selectors get a text filter so they only match cookie banners. */
 function bannerTarget(banner, selector, extra = {}) {
     const target = { selector, ...extra };
@@ -227,20 +234,9 @@ function sel(el, root) {
     return { selector: uniqueSelector(el, root) };
 }
 
-function textSel(item, root, bannerSelector) {
-    // Prefer structural selector; add a textFilter when selector is ambiguous across siblings.
-    const s = { selector: uniqueSelector(item.el, root) };
-    return s;
-}
-
-function clickAction(item, root, parentSel) {
-    const target = textSel(item, root);
-    // Selector is relative to the banner root, so use banner as parent.
-    return { type: "click", parent: { selector: parentSel }, target };
-}
-
 export function ruleNameFor(hostname, banner) {
-    const cls = (banner.id || "").replace(/[^a-z0-9-]/gi, "") || Array.from(banner.classList).find(stableToken) || "banner";
+    const clean = (t) => String(t || "").replace(/[^a-z0-9_-]/gi, "");
+    const cls = clean(banner.id) || clean(Array.from(banner.classList).find(stableToken)) || "banner";
     return `auto:${hostname}:${cls}`.slice(0, 80);
 }
 
@@ -336,7 +332,7 @@ export function generateRule(banner, hostname) {
     const rule = {
         [name]: {
             detectors: [{
-                presentMatcher: [{ type: "css", target: bannerTarget(banner, bannerSelector) }],
+                presentMatcher: [hostMatcher(hostname), { type: "css", target: bannerTarget(banner, bannerSelector) }],
                 showingMatcher: [{ type: "css", target: bannerTarget(banner, bannerSelector, { displayFilter: true }) }]
             }],
             methods
@@ -414,7 +410,7 @@ export function generateRuleFromPicks(picks, hostname) {
         rule: {
             [name]: {
                 detectors: [{
-                    presentMatcher: [{ type: "css", target: bannerTarget(banner, bannerSelector) }],
+                    presentMatcher: [hostMatcher(hostname), { type: "css", target: bannerTarget(banner, bannerSelector) }],
                     showingMatcher: [{ type: "css", target: bannerTarget(banner, bannerSelector, { displayFilter: true }) }]
                 }],
                 methods

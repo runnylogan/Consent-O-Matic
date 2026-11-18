@@ -81,3 +81,19 @@ test("bundled rules seed once, add only missing names, and never resurrect delet
     assert.equal(await seedBundledRules(bundled, 1), 0);                // same version: no resurrection
     assert.equal(await seedBundledRules(bundled, 2), 1);                // newer bundle version: adds missing again
 });
+
+test("restored settings are filtered to the shapes the extension writes", async () => {
+    await GDPRConfig.setConsentValues({ A: false, B: false, D: false, E: false, F: false, X: false });
+    await applyBackup({
+        format: "consent-o-matic-backup", version: 1, customRuleLists: rule("r1"),
+        ruleLists: ["https://good.example/list.json", "javascript:alert(1)", 5],
+        consentValues: { A: true, B: "yes", Z: true },
+        generalSettings: { hideInsteadOfPIP: true, evil: { nested: 1 } }
+    }, "replace");
+    assert.ok((await GDPRConfig.getRuleLists()).includes("https://good.example/list.json"));
+    assert.ok(!(await GDPRConfig.getRuleLists()).some(u => String(u).startsWith("javascript")));
+    const cv = await GDPRConfig.getConsentValues();
+    assert.equal(cv.A, true); assert.equal(cv.B, false); assert.equal(cv.Z, undefined);
+    const gs = await GDPRConfig.getGeneralSettings();
+    assert.equal(gs.hideInsteadOfPIP, true); assert.equal(gs.evil, undefined);
+});

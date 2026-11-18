@@ -135,3 +135,9 @@ test("simultaneous pushes are serialised and both succeed", async () => {
     const results = await Promise.all([B.pushRemote({ force: true }), B.pushRemote({ force: true })]);
     assert.deepEqual(results, ["pushed", "pushed"]);
 });
+
+test("repository and folder cannot walk out of the contents API path", async () => {
+    await assert.rejects(B.setRemote({ repo: "../..", dir: "" }), /owner\/name/);
+    await assert.rejects(B.setRemote({ repo: "me/private-rules", dir: "a/../../b" }), /\.\./);
+    await B.setRemote({ repo: "me/private-rules", dir: "consent-o-matic" });
+});
