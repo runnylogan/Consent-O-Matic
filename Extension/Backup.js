@@ -92,12 +92,10 @@ const STATUS_KEY = "backupRemoteStatus";
 const HASH_KEY = "backupRemoteHash";
 
 export const REMOTE_DEFAULTS = {
-    enabled: false, repo: "", branch: "main", dir: "consent-o-matic", token: "",
-    gistEnabled: false, gistId: "", gistFile: "custom-rules.json", gistToken: ""
+    enabled: false, repo: "", branch: "main", dir: "consent-o-matic", token: ""
 };
+const LEGACY_GIST_KEYS = ["gistEnabled", "gistId", "gistFile", "gistToken"];
 const RULES_SCHEMA = "https://raw.githubusercontent.com/cavi-au/Consent-O-Matic/master/rules.schema.json";
-const GIST_HASH_KEY = "backupGistHash";
-const GIST_STATUS_KEY = "backupGistStatus";
 
 function localGet(key, fallback) {
     return new Promise((resolve) => chrome.storage.local.get({ [key]: fallback }, (r) => resolve(r[key])));
@@ -107,7 +105,19 @@ function localSet(key, value) {
 }
 
 export async function getRemote() {
-    return Object.assign({}, REMOTE_DEFAULTS, await localGet(REMOTE_KEY, {}));
+    const stored = Object.assign({}, await localGet(REMOTE_KEY, {}));
+    for (const k of LEGACY_GIST_KEYS) delete stored[k];
+    return Object.assign({}, REMOTE_DEFAULTS, stored);
+}
+
+/** The gist target was removed: wipe any saved gist settings (including its token) and status. */
+export async function dropGistConfig() {
+    const stored = await localGet(REMOTE_KEY, null);
+    if (stored && LEGACY_GIST_KEYS.some((k) => k in stored)) {
+        for (const k of LEGACY_GIST_KEYS) delete stored[k];
+        await localSet(REMOTE_KEY, stored);
+    }
+    await new Promise((resolve) => chrome.storage.local.remove(["backupGistHash", "backupGistStatus"], resolve));
 }
 
 export async function setRemote(cfg) {
@@ -116,14 +126,8 @@ export async function setRemote(cfg) {
     next.branch = String(next.branch || "main").trim() || "main";
     next.dir = String(next.dir || "").trim().replace(/^\/+|\/+$/g, "");
     if (next.repo && !/^[\w.-]+\/[\w.-]+$/.test(next.repo)) throw new Error("Repository must look like owner/name");
-    // Accept a gist URL or a bare id.
-    const idMatch = String(next.gistId || "").match(/[0-9a-f]{20,40}/i);
-    next.gistId = idMatch ? idMatch[0].toLowerCase() : "";
-    if (String(cfg.gistId || "").trim() && !next.gistId) throw new Error("Gist must be a gist URL or id");
-    next.gistFile = String(next.gistFile || "").trim() || "custom-rules.json";
     await localSet(REMOTE_KEY, next);
     await localSet(HASH_KEY, ""); // new target: push again even if content is unchanged
-    await localSet(GIST_HASH_KEY, "");
     return next;
 }
 
@@ -224,72 +228,6 @@ export async function pushRemote({ force = false } = {}) {
     }
 }
 
-export function getGistStatus() {
-    return localGet(GIST_STATUS_KEY, null);
-}
-
-/**
- * Publish the rules to a gist as a rule-list URL. The gist file is MERGED, never replaced: rules already in
- * it (written by hand, or by another install) are kept, and local rules win on a name clash. If the existing
- * file cannot be read or parsed nothing is written. Returns "pushed" | "unchanged" | "skipped".
- */
-export async function pushGist({ force = false } = {}) {
-    const cfg = await getRemote();
-    if (!cfg.gistEnabled || !cfg.gistId || !cfg.gistToken) return "skipped";
-
-    const local = await GDPRConfig.getCustomRuleLists();
-    delete local["$schema"];
-    if (Object.keys(local).length === 0) return "skipped";
-
-    const hash = await sha256(JSON.stringify(local));
-    if (!force && hash === await localGet(GIST_HASH_KEY, "")) return "unchanged";
-
-    const url = "https://api.github.com/gists/" + cfg.gistId;
-    try {
-        const res = await gh(cfg, url, {}, cfg.gistToken);
-        if (!res.ok) throw await explain(res, "Reading gist");
-        const gist = await res.json();
-        const file = gist.files && gist.files[cfg.gistFile];
-
-        let remote = {};
-        if (file) {
-            if (file.truncated) throw new Error("Gist file is too large to merge safely; nothing was written");
-            try { remote = JSON.parse(file.content); } catch (e) {
-                throw new Error("Existing gist file is not valid JSON; nothing was written");
-            }
-            if (!remote || typeof remote !== "object" || Array.isArray(remote)) {
-                throw new Error("Existing gist file is not a rule object; nothing was written");
-            }
-        }
-
-        const merged = Object.assign({ "$schema": remote["$schema"] || RULES_SCHEMA }, remote, local);
-        const added = Object.keys(merged).filter((k) => !(k in remote)).length;
-        const changed = Object.keys(local).filter((k) => k in remote && JSON.stringify(remote[k]) !== JSON.stringify(local[k])).length;
-
-        if (file && added === 0 && changed === 0) {
-            await localSet(GIST_HASH_KEY, hash);
-            await setGistStatus(true, "Gist already up to date");
-            return "unchanged";
-        }
-
-        const patch = await gh(cfg, url, {
-            method: "PATCH",
-            body: JSON.stringify({ files: { [cfg.gistFile]: { content: JSON.stringify(merged, null, 2) + "\n" } } })
-        }, cfg.gistToken);
-        if (!patch.ok) throw await explain(patch, "Writing gist");
-
-        await localSet(GIST_HASH_KEY, hash);
-        await setGistStatus(true, "Gist updated: " + added + " added, " + changed + " changed, " + Object.keys(remote).filter((k) => k !== "$schema" && !(k in local)).length + " existing kept");
-        return "pushed";
-    } catch (e) {
-        await setGistStatus(false, e.message);
-        throw e;
-    }
-}
-async function setGistStatus(ok, message) {
-    await localSet(GIST_STATUS_KEY, { time: Date.now(), ok, message });
-}
-
 /** Restore from the configured repository (used on a new install after entering repo + token). */
 export async function restoreRemote(mode = "merge") {
     const cfg = await getRemote();
@@ -317,7 +255,6 @@ export function scheduleBackup(delay = 3000) {
     clearTimeout(timer);
     timer = setTimeout(() => {
         pushRemote().catch((e) => console.warn("Online backup failed:", e.message));
-        pushGist().catch((e) => console.warn("Gist publish failed:", e.message));
     }, delay);
 }
 

@@ -1,5 +1,5 @@
 import GDPRConfig from './GDPRConfig.js';
-import { scheduleBackup, pushRemote, pushGist, seedBundledRules } from './Backup.js';
+import { scheduleBackup, pushRemote, seedBundledRules, dropGistConfig } from './Backup.js';
 
 const STATUS = {
     "INIT": 0,
@@ -288,7 +288,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 // Catch up on anything not yet pushed (failed earlier, or changed while offline). No-op when unchanged.
 pushRemote().catch((e) => console.warn("Online backup failed:", e.message));
-pushGist().catch((e) => console.warn("Gist publish failed:", e.message));
+dropGistConfig().catch((e) => console.warn("Could not clear old gist settings:", e.message));
 
 
 // Seed the custom rules bundled with the extension (custom-rules.json) into storage, once per bundle version.

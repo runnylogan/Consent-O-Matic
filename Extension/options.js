@@ -1,6 +1,6 @@
 import GDPRConfig from './GDPRConfig.js';
 import Language from './Language.js';
-import { buildBackup, applyBackup, listSnapshots, getRemote, setRemote, pushRemote, pushGist, restoreRemote, getRemoteStatus, getGistStatus } from './Backup.js';
+import { buildBackup, applyBackup, listSnapshots, getRemote, setRemote, pushRemote, restoreRemote, getRemoteStatus } from './Backup.js';
 
 let optionsUL = document.querySelector(".configurator ul.categorylist");
 if (optionsUL){
@@ -187,6 +187,42 @@ if (optionsUL){
 
     updateRuleList();
 
+    // ---- Custom rules list ----
+    function renderCustomRules() {
+        chrome.runtime.sendMessage("GetCustomRuleList", (rules) => {
+            const list = document.querySelector("#customRuleList");
+            list.innerHTML = "";
+            const names = Object.keys(rules || {}).filter((n) => n !== "$schema").sort();
+            document.querySelector("#customCount").textContent = names.length ? "(" + names.length + ")" : "";
+            if (names.length === 0) {
+                const li = document.createElement("li");
+                li.className = "empty";
+                li.textContent = "None yet. They appear here when the extension generates or you teach a rule.";
+                list.appendChild(li);
+                return;
+            }
+            names.forEach((name) => {
+                const li = document.createElement("li");
+                const button = document.createElement("button");
+                button.textContent = "X";
+                button.title = "Delete " + name;
+                button.setAttribute("aria-label", "Delete " + name);
+                const label = document.createElement("span");
+                label.textContent = name;
+                li.append(button, label);
+                list.appendChild(li);
+                button.addEventListener("click", () => {
+                    if (!confirm("Delete the rule \u201c" + name + "\u201d? It stays in your local history and GitHub backups.")) return;
+                    chrome.runtime.sendMessage("DeleteCustomRule|" + name, () => renderCustomRules());
+                });
+            });
+        });
+    }
+    renderCustomRules();
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === "local" && changes.customRuleLists) renderCustomRules();
+    });
+
     document.querySelector("#urladd").addEventListener("click", function (evt) {
         let ruleList = document.querySelector("#newurl").value;
         document.querySelector("#newurl").value = "";
@@ -290,14 +326,6 @@ if (optionsUL){
         field("remoteEnabled").checked = cfg.enabled;
         hasToken = Boolean(cfg.token);
         field("remoteToken").placeholder = hasToken ? "Saved (leave blank to keep)" : "github_pat_…";
-        field("gistId").value = cfg.gistId;
-        field("gistFile").value = cfg.gistFile;
-        field("gistEnabled").checked = cfg.gistEnabled;
-        field("gistToken").placeholder = cfg.gistToken ? "Saved (leave blank to keep)" : "github_pat_…";
-        const gstat = await getGistStatus();
-        const gEl = document.querySelector("#gistStatus");
-        gEl.textContent = gstat ? (gstat.ok ? "Gist: " : "Gist failed: ") + gstat.message + " · " + new Date(gstat.time).toLocaleString("en-GB") : "";
-        gEl.classList.toggle("error", Boolean(gstat && !gstat.ok));
         const status = await getRemoteStatus();
         if (status) setRemoteStatus((status.ok ? "Last backup: " : "Last attempt failed: ") + status.message + " · " + new Date(status.time).toLocaleString("en-GB"), status.ok);
     }
@@ -310,11 +338,8 @@ if (optionsUL){
             enabled: field("remoteEnabled").checked
         };
         if (field("remoteToken").value) update.token = field("remoteToken").value.trim();
-        Object.assign(update, { gistId: field("gistId").value, gistFile: field("gistFile").value, gistEnabled: field("gistEnabled").checked });
-        if (field("gistToken").value) update.gistToken = field("gistToken").value.trim();
         await setRemote(update);
         field("remoteToken").value = "";
-        field("gistToken").value = "";
         await loadRemote();
     }
 
@@ -326,14 +351,9 @@ if (optionsUL){
         try {
             await saveRemote();
             setRemoteStatus("Backing up…");
-            const errors = [];
-            const results = [];
-            for (const push of [pushRemote, pushGist]) {
-                try { results.push(await push({ force: true })); } catch (e) { errors.push(e.message); results.push("failed"); }
-            }
+            const result = await pushRemote({ force: true });
             await loadRemote();
-            if (errors.length) setRemoteStatus(errors.join(" · "), false);
-            else if (results.every((r) => r === "skipped")) setRemoteStatus("Nothing to back up: enable a target, fill in its details, and have at least one custom rule.", false);
+            if (result === "skipped") setRemoteStatus("Nothing to back up: tick “Push automatically”, fill in the repository and token, and have at least one custom rule.", false);
         } catch (e) { setRemoteStatus(e.message, false); }
     });
     field("remoteRestore").addEventListener("click", async () => {

@@ -6,7 +6,8 @@ function area() {
     const data = {};
     return {
         get(defaults, cb) { cb(Object.fromEntries(Object.keys(defaults).map(k => [k, k in data ? data[k] : defaults[k]]))); },
-        set(obj, cb) { Object.assign(data, JSON.parse(JSON.stringify(obj))); cb && cb(); }
+        set(obj, cb) { Object.assign(data, JSON.parse(JSON.stringify(obj))); cb && cb(); },
+        remove(keys, cb) { [].concat(keys).forEach(k => delete data[k]); cb && cb(); }
     };
 }
 globalThis.chrome = { storage: { local: area(), sync: area() }, runtime: {} };

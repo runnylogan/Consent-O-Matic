@@ -226,7 +226,7 @@ input[type="url"] {
     .helptext { padding: 0 1.5rem 1rem; color: var(--muted); p { margin: 0 0 .75rem; } }
     .helptext h2 { color: var(--text); }
 
-    .categorylist, .settingsList, .flags, .rulelist, .snapshotlist {
+    .categorylist, .settingsList, .flags, .rulelist, .customlist, .snapshotlist {
         list-style: none;
         margin: 0;
         padding: 0 1rem;
@@ -328,7 +328,7 @@ input[type="url"] {
         &::before { transform: translateX(22px); }
     }
 
-    .rulelist li {
+    .rulelist li, .customlist li {
         display: flex;
         align-items: center;
         word-break: break-all;
@@ -361,6 +361,35 @@ input[type="url"] {
     }
 
     .ruleoptions, .logoptions { padding: 0 1.5rem 1.25rem; }
+
+    // Rule Lists tab: titled panels instead of one long run of text.
+    .tab_rl {
+        .panel {
+            margin: 0 1rem 1rem;
+            padding: 1.1rem 1.25rem 1.25rem;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: var(--surface);
+            &:last-child { margin-bottom: 0; }
+
+            h2 { margin: 0 0 .35rem; display: flex; align-items: baseline; gap: .5rem; }
+            h3 { margin: 1.25rem 0 .5rem; }
+            .count { font-size: .85rem; font-weight: 600; color: var(--muted); }
+            .lede { color: var(--muted); margin: 0 0 .9rem; }
+            .hint { color: var(--muted); font-size: .9em; margin: .25rem 0 0; }
+            .actions { margin: .9rem 0 0; }
+            .status:empty { display: none; }
+
+            .rulelist, .customlist, .snapshotlist { padding: 0; }
+            .ruleoptions { padding: 0; margin-top: .75rem; display: flex; gap: .5rem; flex-wrap: wrap; align-items: center;
+                input { flex: 1 1 16rem; font: inherit; padding: .55em .8em; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); }
+                button { margin: 0; }
+            }
+            .customlist li { cursor: default; &.empty { color: var(--muted); padding-left: 1.25rem; } }
+            .customlist li span { word-break: break-word; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9em; }
+            .remoteform { margin-top: 0; }
+        }
+    }
     .remoteform {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));

@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Consent-O-Matic">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 0.5 130 130" role="img" aria-label="Consent-O-Matic">
   <defs>
     <mask id="bite">
-      <rect width="128" height="128" fill="#fff"/>
+      <rect x="0" y="0" width="128" height="128" fill="#fff"/>
       <circle cx="95" cy="27" r="20" fill="#000"/>
     </mask>
   </defs>

@@ -5,7 +5,8 @@ function area() {
     const data = {};
     return {
         get(defaults, cb) { cb(Object.fromEntries(Object.keys(defaults).map(k => [k, k in data ? data[k] : defaults[k]]))); },
-        set(obj, cb) { Object.assign(data, JSON.parse(JSON.stringify(obj))); cb && cb(); }
+        set(obj, cb) { Object.assign(data, JSON.parse(JSON.stringify(obj))); cb && cb(); },
+        remove(keys, cb) { [].concat(keys).forEach(k => delete data[k]); cb && cb(); }
     };
 }
 globalThis.chrome = { storage: { local: area(), sync: area() }, runtime: {} };
@@ -15,22 +16,8 @@ const repoFiles = new Map(); // path -> {sha, content(base64)}
 const calls = [];
 let failWith = null;
 let shaCounter = 0;
-// In-memory gist.
-const GIST_ID = "9f78a5005cf3d79fc6a81c3ffde93c21";
-let gistFiles = { "custom-rules.json": { content: JSON.stringify({ "$schema": "s", ConsentMagic: { detectors: [], methods: [] }, BBC: { detectors: [], methods: [] } }) } };
-const gistCalls = [];
 globalThis.fetch = async (url, init = {}) => {
     const u = new URL(url);
-    if (u.pathname.startsWith("/gists/")) {
-        assert.equal(u.pathname, "/gists/" + GIST_ID);
-        assert.equal(init.headers.Authorization, "Bearer gtok");
-        const method = init.method || "GET";
-        gistCalls.push(method);
-        if (method === "GET") return { ok: true, status: 200, json: async () => ({ files: gistFiles }) };
-        const body = JSON.parse(init.body);
-        for (const [name, f] of Object.entries(body.files)) gistFiles[name] = { content: f.content };
-        return { ok: true, status: 200, json: async () => ({}) };
-    }
     const m = u.pathname.match(/^\/repos\/([^/]+\/[^/]+)\/contents\/(.+)$/);
     assert.ok(m, "unexpected URL " + url);
     assert.equal(init.headers.Authorization, "Bearer tok123");
@@ -115,46 +102,14 @@ test("repo input is normalised and validated", async () => {
     await assert.rejects(B.setRemote({ repo: "not a repo" }), /owner\/name/);
 });
 
-const GIST_CFG = { gistEnabled: true, gistId: "https://gist.github.com/runnylogan/" + GIST_ID, gistFile: "custom-rules.json", gistToken: "gtok" };
-const gistRules = () => JSON.parse(gistFiles["custom-rules.json"].content);
-
-test("gist: not configured -> skipped; id is taken from a URL", async () => {
-    assert.equal(await B.pushGist(), "skipped");
-    const cfg = await B.setRemote(GIST_CFG);
-    assert.equal(cfg.gistId, GIST_ID);
-});
-
-test("gist: merges into the existing file, keeps existing rules, adds local ones", async () => {
-    await GDPRConfig.setCustomRuleLists({ ...rule("auto:a.test:x") });
-    assert.equal(await B.pushGist(), "pushed");
-    assert.deepEqual(Object.keys(gistRules()).sort(), ["$schema", "BBC", "ConsentMagic", "auto:a.test:x"]);
-    assert.equal(gistRules().$schema, "s", "existing $schema is kept");
-    assert.match((await B.getGistStatus()).message, /1 added, 0 changed, 2 existing kept/);
-});
-
-test("gist: unchanged is not rewritten; local wins on a name clash; remote-only rules survive", async () => {
-    const before = gistCalls.length;
-    assert.equal(await B.pushGist(), "unchanged");
-    assert.equal(gistCalls.length, before, "no network when unchanged");
-    const changed = { "auto:a.test:x": { detectors: [], methods: [{ name: "UTILITY" }] } };
-    await GDPRConfig.setCustomRuleLists(changed);
-    assert.equal(await B.pushGist(), "pushed");
-    assert.deepEqual(gistRules()["auto:a.test:x"], changed["auto:a.test:x"]);
-    assert.ok(gistRules().BBC && gistRules().ConsentMagic, "hand-written rules are never removed");
-});
-
-test("gist: unparseable existing file is never overwritten", async () => {
-    gistFiles["custom-rules.json"] = { content: "{ not json" };
-    await GDPRConfig.setCustomRuleLists({ ...rule("something-new") });
-    await assert.rejects(B.pushGist(), /not valid JSON; nothing was written/);
-    assert.equal(gistFiles["custom-rules.json"].content, "{ not json");
-    assert.equal((await B.getGistStatus()).ok, false);
-});
-
-test("gist: missing file is created; empty local ruleset is never published", async () => {
-    gistFiles = {};
-    assert.equal(await B.pushGist(), "pushed");
-    assert.deepEqual(Object.keys(gistRules()).sort(), ["$schema", "something-new"]);
-    await GDPRConfig.setCustomRuleLists({});
-    assert.equal(await B.pushGist({ force: true }), "skipped");
+test("legacy gist settings are wiped, including the token", async () => {
+    await new Promise((r) => chrome.storage.local.set({ backupRemote: { repo: "me/private-rules", token: "tok123", enabled: true, gistEnabled: true, gistId: "abc", gistFile: "x.json", gistToken: "gtok" }, backupGistHash: "h", backupGistStatus: { ok: true } }, r));
+    await B.dropGistConfig();
+    const stored = await new Promise((r) => chrome.storage.local.get({ backupRemote: null, backupGistHash: "none", backupGistStatus: "none" }, r));
+    assert.deepEqual(Object.keys(stored.backupRemote).sort(), ["enabled", "repo", "token"]);
+    assert.equal(stored.backupGistHash, "none");
+    assert.equal(stored.backupGistStatus, "none");
+    const cfg = await B.getRemote();
+    assert.equal(cfg.gistToken, undefined);
+    assert.equal(cfg.token, "tok123");
 });
