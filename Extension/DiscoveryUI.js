@@ -235,6 +235,19 @@ export function teachMode(hostname) {
             if (!found || found.length !== 1 || found[0] !== el) picks.problems.push("Could not build a reliable selector for \"" + (el.textContent || el.tagName).trim().slice(0, 30) + "\"");
         };
         const TOGGLE = "input[type='checkbox'],input[type='radio'],[role='switch'],[role='checkbox']";
+        // What you clicked is often the styled switch (a label or span), not the checkbox the rule has to read and click.
+        const toggleInputFor = (t) => {
+            const own = t.closest(TOGGLE) || t.querySelector(TOGGLE);
+            if (own) return own;
+            const control = t.closest("label")?.control;
+            if (control && control.matches(TOGGLE)) return control;
+            for (let n = t, i = 0; n && i < 4; n = n.parentElement, i++) {
+                const found = n.querySelectorAll(TOGGLE);
+                if (found.length === 1) return found[0];
+                if (found.length > 1) break;
+            }
+            return t;
+        };
         // A click that only expands or collapses a section: let the page handle it and replay it when the rule runs.
         const reveal = (t) => {
             // Toggles that only appear after this point belong to the group that was opened.
@@ -281,7 +294,7 @@ export function teachMode(hostname) {
                 if (!ok) picks.problems.push("Could not build a reliable selector for the banner");
                 next();
             } else if (s.key === "toggle") {
-                const input = t.matches("input") ? t : (t.querySelector("input[type='checkbox']") || t.closest("label")?.querySelector("input") || t);
+                const input = toggleInputFor(t);
                 if (!picks.panel && !picks.banner.contains(input)) {
                     picks.panel = containerOf(input);
                     picks.panelSelector = uniqueSelector(picks.panel);

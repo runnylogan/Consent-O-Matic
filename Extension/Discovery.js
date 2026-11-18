@@ -28,29 +28,26 @@ const CATEGORY_RULES = [
 ];
 
 /**
- * Is this box actually on screen: not display:none, not aria-hidden/inert, and not squeezed out or clipped by a collapsed
- * ancestor (accordion sections are often just height:0 with overflow hidden). Ignores the element's own opacity.
+ * Is this element inside a section the page has closed: display:none or visibility:hidden somewhere above it,
+ * hidden/aria-hidden/inert, or a clipped box squeezed to nothing (a height:0 accordion)? Layout is only used for that
+ * last case, and only when the window itself has size, so it also works from a background pane.
  */
-function shownBox(el) {
+function inClosedSection(el) {
     const view = el.ownerDocument.defaultView;
-    const r = el.getBoundingClientRect();
-    if (r.width === 0 && r.height === 0) return false;
+    const sized = view.innerHeight > 50;
     for (let n = el; n && n.nodeType === 1 && n !== el.ownerDocument.documentElement; n = n.parentElement) {
         const cs = view.getComputedStyle(n);
-        if (cs.display === "none" || cs.visibility === "hidden") return false;
-        if (n.getAttribute("aria-hidden") === "true" || n.hasAttribute("inert") || n.hidden) return false;
-        if (n !== el && (cs.overflowY !== "visible" || cs.overflowX !== "visible")) {
-            const nr = n.getBoundingClientRect();
-            if (nr.height < 2 || nr.width < 2) return false;
-            if (r.bottom <= nr.top || r.top >= nr.bottom || r.right <= nr.left || r.left >= nr.right) return false;
-        }
+        if (cs.display === "none" || cs.visibility === "hidden") return true;
+        if (n.getAttribute("aria-hidden") === "true" || n.hasAttribute("inert") || n.hidden) return true;
+        // A scrollable list is not collapsed: rows below its fold are still part of the open panel, so position never counts.
+        if (sized && n !== el && /hidden|clip/.test(cs.overflowY + cs.overflowX) && n.getBoundingClientRect().height < 2) return true;
     }
-    return true;
+    return false;
 }
 
-/** A toggle counts as showing if it, its label or its wrapper is: switch inputs are often invisible with a styled sibling. */
+/** A toggle counts as showing unless it sits in a closed section. Switch inputs are often invisible, so their own size is ignored. */
 export function toggleShown(input) {
-    return [input, input.closest("label"), input.parentElement].some(c => c && shownBox(c));
+    return !inClosedSection(input);
 }
 
 /**
@@ -92,17 +89,21 @@ function cleanText(el) {
 
 function labelFor(el) {
     const doc = el.ownerDocument;
-    let text = "";
+    const candidates = [];
     if (el.id) {
         const l = doc.querySelector(`label[for="${CSS.escape(el.id)}"]`);
-        if (l) text = cleanText(l);
+        if (l) candidates.push(cleanText(l));
     }
-    if (!text && el.closest("label")) text = cleanText(el.closest("label"));
-    if (!text && el.getAttribute("aria-labelledby")) {
-        text = el.getAttribute("aria-labelledby").split(/\s+/)
-            .map(id => doc.getElementById(id)).filter(Boolean).map(cleanText).join(" ");
+    if (el.closest("label")) candidates.push(cleanText(el.closest("label")));
+    if (el.getAttribute("aria-label")) candidates.push(el.getAttribute("aria-label").trim());
+    if (el.getAttribute("aria-labelledby")) {
+        candidates.push(el.getAttribute("aria-labelledby").split(/\s+/)
+            .map(id => doc.getElementById(id)).filter(Boolean).map(cleanText).join(" "));
     }
-    if (!text) text = el.getAttribute("aria-label") || el.getAttribute("name") || "";
+    if (el.getAttribute("name")) candidates.push(el.getAttribute("name"));
+    // First label that actually says something: a styled switch often carries a placeholder like "Switch Label"
+    // while the real name sits in aria-label.
+    let text = candidates.find(c => c && !GENERIC_LABEL.test(c.trim())) || candidates.find(Boolean) || "";
     if (!text) {
         // Nearest row-ish container text, trimmed
         const row = el.closest("li, tr, [class*='row'], [class*='item'], [class*='category'], div");
@@ -281,10 +282,23 @@ export function displayLabel(el) {
     return tidy ? tidy.slice(0, 60) : label;
 }
 
-/** Best-guess consent type (A,B,D,E,F or X) from a toggle's label, then from the description next to it. */
+// A group's own description, when the page links one: aria-describedby on the toggle, or the text an accordion button
+// controls. Only for the first toggle of its section (the group's header switch), never for the switches inside it.
+function describedText(el) {
+    const doc = el.ownerDocument;
+    const ids = (el.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean);
+    let n = el.parentElement;
+    for (let depth = 0; depth < 6 && n && n !== doc.body; depth++, n = n.parentElement) {
+        if (n.querySelector(TOGGLE_SELECTOR) !== el) break;
+        for (const b of n.querySelectorAll("[aria-controls]")) ids.push(...b.getAttribute("aria-controls").split(/\s+/));
+    }
+    return ids.map(id => doc.getElementById(id)).filter(Boolean).map(cleanText).join(" ");
+}
+
+/** Best-guess consent type (A,B,D,E,F or X) from a toggle's label, then from the description beside it. */
 export function categoryFor(el, label = labelFor(el)) {
     for (const [t, re] of CATEGORY_RULES) if (re.test(label)) return t;
-    const context = contextFor(el);
+    const context = contextFor(el) + " " + describedText(el);
     let best = "X", top = 0;
     for (const [t, re] of CATEGORY_RULES) {
         const hits = (context.match(new RegExp(re.source, "gi")) || []).length;

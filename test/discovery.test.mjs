@@ -355,3 +355,15 @@ test("a vendor list button is not treated as a 'more options' control", () => {
     assert.equal(found.needsOptions, undefined);
     assert.equal(found.analysis.manage, undefined);
 });
+
+test("OneTrust-style accordion: real names from aria-label, group category from the controlled description", () => {
+    const doc = load(`<div class="item"><button aria-expanded="false" aria-controls="d1" aria-labelledby="h1"></button>
+        <div class="hdr"><h4 id="h1">Experience cookies</h4><div class="tgl"><input type="checkbox" id="g1" aria-labelledby="h1">
+            <label for="g1"><span>Experience cookies</span></label></div></div>
+        <div class="grp"><p id="d1">These cookies allow us to count visits and traffic sources so we can measure the performance of our site.</p>
+          <ul><li><h5>Store and/or access information on a device</h5><div class="tgl"><input type="checkbox" id="s1" aria-label="Store and/or access information on a device">
+            <label for="s1"><span>Switch Label</span></label></div></li></ul></div></div>`);
+    assert.equal(categoryFor(doc.getElementById("g1")), "B");
+    assert.equal(displayLabel(doc.getElementById("s1")), "Store and/or access information on a device");
+    assert.equal(categoryFor(doc.getElementById("s1")), "D");
+});
