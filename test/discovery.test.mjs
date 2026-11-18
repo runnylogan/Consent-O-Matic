@@ -7,7 +7,7 @@ import Ajv from "ajv";
 // Minimal CSS.escape (jsdom lacks it; real browsers have it).
 globalThis.CSS = { escape: (s) => String(s).replace(/([^a-zA-Z0-9_\u00A0-\uFFFF-])/g, "\\$1").replace(/^(\d)/, "\\3$1 ") };
 
-const { discover, classifyButtons, classifyToggles, exploreOptions, openerRule, generateRuleFromPicks, uniqueSelector } = await import("../Extension/Discovery.js");
+const { discover, classifyButtons, classifyToggles, exploreOptions, openerRule, generateRuleFromPicks, uniqueSelector, categoryFor } = await import("../Extension/Discovery.js");
 const schema = JSON.parse(fs.readFileSync(new URL("../rules.schema.json", import.meta.url)));
 const ajv = new Ajv({ strict: false, allErrors: true });
 const validate = ajv.compile(schema);
@@ -272,4 +272,27 @@ test("taught rule: toggles in a separate panel opened by the manage button are s
     q("#cmpbanner").remove();
     const rule = JSON.parse(JSON.stringify(out.rule));
     assertRuleResolves(doc, { ...rule, [out.name]: { methods: rule[out.name].methods.filter(m => m.name !== "OPEN_OPTIONS" && m.name !== "HIDE_CMP") } });
+});
+
+test("categoryFor guesses from the label, then from the description beside the toggle", () => {
+    const doc = load(`
+        <ul>
+          <li><label><input type="checkbox" id="a"> Experience cookies</label></li>
+          <li><label><input type="checkbox" id="b"> Personalised advertising</label></li>
+          <li><label><input type="checkbox" id="c"> Performance cookies</label></li>
+          <li><input type="checkbox" id="d" aria-label="Group 4"><p>Measures how visitors use the site, with analytics and statistics.</p></li>
+          <li><input type="checkbox" id="e" aria-label="Group 5"><p>Nothing helpful here.</p></li>
+        </ul>`);
+    const got = ["a", "b", "c", "d", "e"].map(id => categoryFor(doc.getElementById(id)));
+    assert.deepEqual(got, ["A", "F", "B", "B", "X"]);
+});
+
+test("taught toggles with no type set are categorised from their text; an explicit type is kept", () => {
+    const doc = load(`<div id="b" style="position:fixed"><p>Cookies</p>
+        <label><input type="checkbox" id="x1"> Personalised advertising</label>
+        <label><input type="checkbox" id="x2"> Analytics</label></div>`);
+    const out = generateRuleFromPicks({ banner: doc.getElementById("b"), toggles: [
+        { el: doc.getElementById("x1"), type: "X" }, { el: doc.getElementById("x2"), type: "E" }] }, "shop.test");
+    assert.deepEqual(out.analysis.toggles.map(t => t.type), ["F", "E"]);
+    assert.deepEqual(out.rule[out.name].methods.find(m => m.name === "DO_CONSENT").action.consents.map(c => c.type), ["F", "E"]);
 });

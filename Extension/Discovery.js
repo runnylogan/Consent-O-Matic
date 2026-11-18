@@ -16,13 +16,13 @@ const TEXT = {
     necessary: /\b(necessary|essential|strictly|required|notwendig|erforderlich|nécessaire|necessari|necesari|technically)\b/i
 };
 
-// Order matters: first match wins. Letters are the engine's consent types.
+// Order matters for ties. Letters are the engine's consent types.
 const CATEGORY_RULES = [
-    ["F", /\b(advertis|marketing|targeting|personali[sz]ed ads?|ads?\b|werbung|publicité|pubblicit|publicidad)/i],
-    ["B", /\b(analytic|statistic|performance|measurement|measure|metrics|statistik|statistique|analisi|estadístic)/i],
-    ["A", /\b(preference|functional|personali[sz]ation|customi[sz]ation|präferenz|préférence|funzional)/i],
-    ["E", /\b(content|social media|social|video|embedded|inhalte|contenu)/i],
-    ["D", /\b(storage|access information|device information|geolocation|information storage|speicher)/i]
+    ["F", /\b(advertis|advert\b|marketing|targeting|targeted|retarget|interest-based|personali[sz]ed ads?|ads?\b|sponsored|werbung|publicité|pubblicit|publicidad)/i],
+    ["B", /\b(analytic|statistic|performance|measurement|measure|metrics|usage|how (you|visitors|people) use|traffic|audience|statistik|statistique|analisi|estadístic)/i],
+    ["A", /\b(preference|functional|functionality|experience|personali[sz]ation|customi[sz]ation|remember|settings|language|präferenz|préférence|funzional)/i],
+    ["E", /\b(content|social media|social|video|embedded|media|recommend|inhalte|contenu)/i],
+    ["D", /\b(storage|store and\/or access|access information|device information|geolocation|information storage|speicher)/i]
 ];
 
 export function visible(el) {
@@ -213,16 +213,37 @@ export function classifyButtons(root) {
     return out;
 }
 
+// Text around a toggle that belongs only to it (its row or card), used when the label alone says nothing.
+function contextFor(el) {
+    let best = "";
+    for (let n = el.parentElement; n && n !== el.ownerDocument.body; n = n.parentElement) {
+        if (n.querySelectorAll(TOGGLE_SELECTOR).length > 1) break;
+        const t = cleanText(n);
+        if (t.length > 600) break;
+        best = t;
+    }
+    return best;
+}
+
+/** Best-guess consent type (A,B,D,E,F or X) from a toggle's label, then from the description next to it. */
+export function categoryFor(el, label = labelFor(el)) {
+    for (const [t, re] of CATEGORY_RULES) if (re.test(label)) return t;
+    const context = contextFor(el);
+    let best = "X", top = 0;
+    for (const [t, re] of CATEGORY_RULES) {
+        const hits = (context.match(new RegExp(re.source, "gi")) || []).length;
+        if (hits > top) { top = hits; best = t; }
+    }
+    return best;
+}
+
 export function classifyToggles(root) {
     const toggles = [];
     for (const el of root.querySelectorAll(TOGGLE_SELECTOR)) {
         const label = labelFor(el);
         const disabled = el.disabled || el.getAttribute("aria-disabled") === "true";
         const necessary = disabled || TEXT.necessary.test(label);
-        let type = "X";
-        for (const [t, re] of CATEGORY_RULES) {
-            if (re.test(label)) { type = t; break; }
-        }
+        const type = categoryFor(el, label);
         toggles.push({ el, label, type, necessary, hidden: !visible(el) && !visible(el.parentElement) });
     }
     return toggles;
@@ -360,6 +381,9 @@ export function discover(doc = document, hostname = location.hostname) {
  * picks = { banner: Element, manage?: Element, toggles?: [{el, type}], save?: Element,
  *           accept?: Element, reject?: Element }
  */
+// Taught toggles start as "X" (unset): fill in a guess from their text, but never override a type the caller chose.
+const pickType = (t) => (t.type && t.type !== "X") ? t.type : categoryFor(t.el);
+
 export function generateRuleFromPicks(picks, hostname) {
     const banner = picks.banner;
     // Teach mode records selectors while the page is still as the user saw it (opening the options can replace the banner).
@@ -384,7 +408,7 @@ export function generateRuleFromPicks(picks, hostname) {
             action: {
                 type: "consent",
                 consents: picks.toggles.map(t => ({
-                    type: t.type || "X",
+                    type: pickType(t),
                     matcher: { type: "checkbox", ...act(t.el) },
                     toggleAction: click(t.el)
                 }))
@@ -426,7 +450,7 @@ export function generateRuleFromPicks(picks, hostname) {
             bannerSelector,
             accept: picks.accept && cleanText(picks.accept), reject: picks.reject && cleanText(picks.reject),
             save: picks.save && cleanText(picks.save), manage: picks.manage && cleanText(picks.manage),
-            toggles: (picks.toggles || []).map(t => ({ label: labelFor(t.el), type: t.type || "X", hidden: false })),
+            toggles: (picks.toggles || []).map(t => ({ label: labelFor(t.el), type: pickType(t), hidden: false })),
             confidence: 1
         },
         banner
