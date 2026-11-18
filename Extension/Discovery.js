@@ -194,7 +194,7 @@ export function bannerTarget(banner, selector, extra = {}) {
 
 // ---------- Banner detection ----------
 
-export function findBannerCandidates(doc = document) {
+export function findBannerCandidates(doc = document, { maxText = 6000 } = {}) {
     const candidates = [];
     const seen = new Set();
 
@@ -205,11 +205,20 @@ export function findBannerCandidates(doc = document) {
         "body > div, body > section, body > aside"
     );
 
-    for (const el of roots) {
+    // Banners with unremarkable ids and classes (OneTrust's own wrapper, say): reach them through their accept/reject buttons.
+    const found = new Set(roots);
+    for (const b of doc.querySelectorAll(BUTTON_SELECTOR)) {
+        const t = cleanText(b);
+        if (!t || t.length > 40 || !(TEXT.rejectAll.test(t) || TEXT.acceptAll.test(t)) || !visible(b)) continue;
+        const c = containerOf(b);
+        if (c && c !== doc.body) found.add(c);
+    }
+
+    for (const el of found) {
         if (seen.has(el) || !visible(el)) continue;
         seen.add(el);
         const text = cleanText(el);
-        if (text.length < 20 || text.length > 6000) continue;
+        if (text.length < 20 || text.length > maxText) continue;
 
         const style = el.ownerDocument.defaultView.getComputedStyle(el);
         const buttons = el.querySelectorAll(BUTTON_SELECTOR).length;
@@ -307,9 +316,19 @@ export function categoryFor(el, label = labelFor(el)) {
     return best;
 }
 
+// Switches inside a vendor/partner list (one per company, or "select all vendors") are a separate screen, not the choices.
+const VENDOR_TOKEN = /(^|[^a-z])(vendors?|hosts?|partners?|vlst)([^a-z]|$)/i;
+function inVendorList(el, root) {
+    for (let n = el; n && n !== root && n.nodeType === 1; n = n.parentElement) {
+        if (VENDOR_TOKEN.test(n.id + " " + (n.getAttribute("class") || ""))) return true;
+    }
+    return VENDOR_TOKEN.test(el.id || "");
+}
+
 export function classifyToggles(root) {
     const toggles = [];
     for (const el of root.querySelectorAll(TOGGLE_SELECTOR)) {
+        if (inVendorList(el, root)) continue;
         const label = labelFor(el);
         const disabled = el.disabled || el.getAttribute("aria-disabled") === "true";
         const necessary = disabled || TEXT.necessary.test(label);
@@ -574,7 +593,7 @@ function panelWithToggles(root) {
 /** After clicking "more options": find the container that now shows the toggles. */
 export function findOptionsPanel(doc, original) {
     if (original && original.isConnected && visible(original) && panelWithToggles(original)) return original;
-    for (const c of findBannerCandidates(doc)) if (panelWithToggles(c.el)) return c.el;
+    for (const c of findBannerCandidates(doc, { maxText: 40000 })) if (panelWithToggles(c.el)) return c.el;
     for (const d of doc.querySelectorAll("dialog, [role='dialog'], [role='alertdialog'], [aria-modal='true']")) {
         if (visible(d) && panelWithToggles(d)) return d;
     }

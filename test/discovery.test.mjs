@@ -395,3 +395,14 @@ test("exploreOptions opens collapsed OneTrust-style groups on its own and links 
     const open = opened.rule[opened.name].methods.find(m => m.name === "OPEN_OPTIONS").action;
     assert.equal(open.actions.filter(a => a.type === "click").length, 3); // manage + two expanders
 });
+
+test("a fixed banner with unremarkable ids is found through its accept/reject buttons, and vendor-list switches are ignored", () => {
+    const doc = load(`<div id="wrap"><div id="ot-b" style="position:fixed"><p>We care about your privacy. We and our partners store information in cookies.</p>
+        <button>I Accept</button><button>Reject all</button><button>Show purposes</button></div></div>`);
+    const found = discover(doc, "shop.test");
+    assert.ok(found, "banner found");
+    assert.equal(found.banner.id, "ot-b");
+    const d2 = load(`<div id="p"><ul class="ot-hosts-ui"><li><input type="checkbox" id="v1" aria-label="Vendor 1"></li></ul>
+        <input type="checkbox" id="c1" aria-label="Analytics"></div>`);
+    assert.deepEqual(classifyToggles(d2.getElementById("p")).map(t => t.el.id), ["c1"]);
+});
