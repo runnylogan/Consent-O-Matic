@@ -15,6 +15,7 @@ globalThis.chrome = { storage: { local: area(), sync: area() }, runtime: {} };
 const repoFiles = new Map(); // path -> {sha, content(base64)}
 const calls = [];
 let failWith = null;
+let conflictsLeft = 0; // simulate a concurrent writer: PUT fails with 409 this many times
 let shaCounter = 0;
 globalThis.fetch = async (url, init = {}) => {
     const u = new URL(url);
@@ -30,6 +31,7 @@ globalThis.fetch = async (url, init = {}) => {
     if (method === "GET") return repoFiles.has(path) ? res(200, repoFiles.get(path)) : res(404, { message: "Not Found" });
     const body = JSON.parse(init.body);
     const prev = repoFiles.get(path);
+    if (conflictsLeft > 0) { conflictsLeft--; if (prev) prev.sha = "other" + (++shaCounter); return res(409, { message: path + " does not match " + body.sha }); }
     if (prev && body.sha !== prev.sha) return res(409, { message: "sha mismatch" });
     repoFiles.set(path, { sha: "sha" + (++shaCounter), content: body.content });
     return res(200, {});
@@ -112,4 +114,24 @@ test("legacy gist settings are wiped, including the token", async () => {
     const cfg = await B.getRemote();
     assert.equal(cfg.gistToken, undefined);
     assert.equal(cfg.token, "tok123");
+});
+
+test("409 from a concurrent writer is retried with a fresh sha; an unchanged rules file is not rewritten", async () => {
+    await GDPRConfig.setCustomRuleLists({ ...rule("auto:race.test:x") });
+    await B.setRemote(CFG);
+    calls.length = 0;
+    conflictsLeft = 2;
+    assert.equal(await B.pushRemote({ force: true }), "pushed");
+    assert.equal(conflictsLeft, 0);
+    assert.ok(calls.filter(c => c.method === "PUT").length >= 4, "retried after the conflicts");
+    assert.deepEqual(Object.keys(decode("consent-o-matic/custom-rules.json")).sort(), ["$schema", "auto:race.test:x"]);
+    calls.length = 0;
+    assert.equal(await B.pushRemote({ force: true }), "pushed");
+    assert.equal(calls.filter(c => c.method === "PUT" && c.path.endsWith("custom-rules.json")).length, 0, "identical rules file is not rewritten");
+});
+
+test("simultaneous pushes are serialised and both succeed", async () => {
+    await GDPRConfig.setCustomRuleLists({ ...rule("auto:two.test:y") });
+    const results = await Promise.all([B.pushRemote({ force: true }), B.pushRemote({ force: true })]);
+    assert.deepEqual(results, ["pushed", "pushed"]);
 });

@@ -159,7 +159,7 @@ function contentsUrl(cfg, name) {
 }
 
 async function gh(cfg, url, init = {}, token = cfg.token) {
-    const res = await fetch(url, Object.assign({}, init, {
+    const res = await fetch(url, Object.assign({ cache: "no-store" }, init, {
         headers: Object.assign({
             "Authorization": "Bearer " + token,
             "Accept": "application/vnd.github+json",
@@ -179,18 +179,33 @@ async function explain(res, what) {
     return new Error(what + " failed (" + res.status + (hint ? ", " + hint : "") + (detail ? ": " + detail : "") + ")");
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Create or update one file. The background page and the options page can both push at once, so a 409
+ * ("sha does not match") means the version we read is stale: read again and retry. Identical content is
+ * never written, so no empty commits. Returns true if a commit was made.
+ */
 async function putFile(cfg, name, text, message) {
     const url = contentsUrl(cfg, name);
-    let sha;
-    const existing = await gh(cfg, url + "?ref=" + encodeURIComponent(cfg.branch));
-    if (existing.ok) sha = (await existing.json()).sha;
-    else if (existing.status !== 404) throw await explain(existing, "Reading " + name);
+    const content = toBase64(text);
+    for (let attempt = 0; ; attempt++) {
+        let sha;
+        const existing = await gh(cfg, url + "?ref=" + encodeURIComponent(cfg.branch));
+        if (existing.ok) {
+            const file = await existing.json();
+            if (typeof file.content === "string" && file.content.replace(/\s/g, "") === content) return false;
+            sha = file.sha;
+        } else if (existing.status !== 404) throw await explain(existing, "Reading " + name);
 
-    const res = await gh(cfg, url, {
-        method: "PUT",
-        body: JSON.stringify({ message, content: toBase64(text), branch: cfg.branch, ...(sha ? { sha } : {}) })
-    });
-    if (!res.ok) throw await explain(res, "Writing " + name);
+        const res = await gh(cfg, url, {
+            method: "PUT",
+            body: JSON.stringify({ message, content, branch: cfg.branch, ...(sha ? { sha } : {}) })
+        });
+        if (res.ok) return true;
+        if (res.status === 409 && attempt < 4) { await sleep(300 + Math.random() * 700); continue; }
+        throw await explain(res, "Writing " + name);
+    }
 }
 
 function stamp(d = new Date()) {
@@ -203,7 +218,14 @@ function stamp(d = new Date()) {
  * never overwrite a good backup) or when nothing changed since the last successful push.
  * Returns "pushed" | "unchanged" | "skipped".
  */
-export async function pushRemote({ force = false } = {}) {
+let pushChain = Promise.resolve();
+export function pushRemote(opts = {}) {
+    const run = pushChain.then(() => pushRemoteNow(opts));
+    pushChain = run.catch(() => {});
+    return run;
+}
+
+async function pushRemoteNow({ force = false } = {}) {
     const cfg = await getRemote();
     if (!cfg.enabled || !cfg.repo || !cfg.token) return "skipped";
 
