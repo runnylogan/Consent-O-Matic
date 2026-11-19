@@ -45,6 +45,16 @@ chrome.runtime.onMessage.addListener(function (message, sender, reply) {
             let newRule = JSON.parse(message.substring(message.indexOf("|")+1));
 
             GDPRConfig.getCustomRuleLists().then((customRules)=>{
+                // A rule discovery or teach mode builds replaces the earlier ones it built for the same site, so old
+                // attempts cannot run first and get in the way. (Openers end in ":open" and are added after their rule.)
+                const [newName] = Object.keys(newRule);
+                const m = /^(?:auto|taught):([^:]+):/.exec(newName || "");
+                if (m && !newName.endsWith(":open")) {
+                    Object.keys(customRules).forEach((key) => {
+                        const k = /^(?:auto|taught):([^:]+):/.exec(key);
+                        if (k && k[1] === m[1] && key !== newName) delete customRules[key];
+                    });
+                }
                 let combinedCustomRules = Object.assign({}, customRules, newRule);
 
                 GDPRConfig.setCustomRuleLists(combinedCustomRules);

@@ -56,6 +56,7 @@ async function contentScriptRunner() {
                                         let result = {
                                             "handled": evt.handled
                                         };
+                                        console.info("Consent-O-Matic engine: " + (evt.handled ? "handled by " + evt.cmpName + " (" + evt.clicks + " clicks)" : evt.error ? "a rule errored" : "no rule handled this page"));
     
                                         if(evt.handled) {
                                             result.cmp = evt.cmpName;
