@@ -32,7 +32,12 @@ async function contentScriptRunner() {
                         delete customRules["$schema"];
         
                         // Concat rule-lists to engine config in order
-                        let config = Object.assign({}, ...fetchedRules, customRules);
+                        // Your own rules go first: the engine handles only the first rule that matches a page, so a saved
+                        // rule has to be tried before a downloaded one that also recognises the same banner.
+                        let config = Object.assign({}, customRules);
+                        fetchedRules.forEach((ruleObj) => {
+                            Object.keys(ruleObj).forEach((key) => { if (!(key in config)) config[key] = ruleObj[key]; });
+                        });
         
                         GDPRConfig.getConsentValues().then((consentTypes)=>{
                             GDPRConfig.getDebugValues().then((debugValues)=>{
