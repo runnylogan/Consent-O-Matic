@@ -9,8 +9,19 @@ let started = false;
 const DISMISS_KEY = "discoveryDismissed";
 const DISMISS_MS = 7 * 24 * 3600 * 1000;
 
+// A "Not now" lasts a week, but a new extension version starts fresh so a fix is not hidden behind an old dismissal.
 function getDismissed() {
-    return new Promise((resolve) => chrome.storage.local.get({ [DISMISS_KEY]: {} }, (r) => resolve(r[DISMISS_KEY])));
+    const version = chrome.runtime.getManifest().version;
+    return new Promise((resolve) => chrome.storage.local.get({ [DISMISS_KEY]: {}, discoveryDismissedFor: version }, (r) => {
+        if (r.discoveryDismissedFor !== version) {
+            chrome.storage.local.set({ [DISMISS_KEY]: {}, discoveryDismissedFor: version }, () => resolve({}));
+        } else resolve(r[DISMISS_KEY]);
+    }));
+}
+
+async function forgetDismissal(host) {
+    const d = await getDismissed();
+    if (d[host]) { delete d[host]; await new Promise((resolve) => chrome.storage.local.set({ [DISMISS_KEY]: d }, resolve)); }
 }
 
 async function dismissHost(host) {
@@ -122,6 +133,7 @@ async function reviewAndSave(ctx, result, dry) {
 
 /** Manual teach mode, started from the popup. */
 export async function startTeach(ctx) {
+    await forgetDismissal(ctx.host);
     const result = await teachMode(ctx.host);
     if (!result) return;
     await reviewAndSave(ctx, result, result.dryRun || dryRun(result.rule));
