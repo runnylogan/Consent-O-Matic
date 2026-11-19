@@ -137,6 +137,11 @@ export async function runDiscovery(ctx) {
     if (dismissed && Date.now() - dismissed < DISMISS_MS) return;
 
     started = true;
+    if (ctx.engineSawCMP) {
+        // The engine recognised a CMP but ended with nothing handled: give it time, then check the banner is still there.
+        await new Promise((r) => setTimeout(r, 4000));
+        if (ctx.wasHandled && ctx.wasHandled()) { started = false; return; }
+    }
     let result = await waitForCandidate();
     if (!result) return; // no banner on this page: say nothing
 

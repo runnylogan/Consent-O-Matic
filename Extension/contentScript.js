@@ -47,12 +47,14 @@ async function contentScriptRunner() {
                                     ConsentEngine.topFrameUrl = url;
             
                                     chrome.runtime.sendMessage("Searching");
+                                    let handledAny = false;
                                     const handledCallback = (evt)=>{
                                         let result = {
                                             "handled": evt.handled
                                         };
     
                                         if(evt.handled) {
+                                            handledAny = true;
                                             result.cmp = evt.cmpName;
                                             result.clicks = evt.clicks;
                                             result.url = url;
@@ -60,19 +62,19 @@ async function contentScriptRunner() {
                                             result.consentTypes = consentTypes;
         
                                             chrome.runtime.sendMessage("HandledCMP|"+JSON.stringify(result));
-                                        } else if(evt.error) {
-                                            chrome.runtime.sendMessage("CMPError");
                                         } else {
-                                            chrome.runtime.sendMessage("NothingFound");
-                                            // Only when the engine never recognised anything: a known CMP that is slow or not
-                                            // showing also ends up here, and must not trigger discovery.
-                                            const engineSawCMP = ConsentEngine.singleton && ConsentEngine.singleton.triedCMPs.size > 0;
-                                            if (window === window.parent && !engineSawCMP) {
+                                            chrome.runtime.sendMessage(evt.error ? "CMPError" : "NothingFound");
+                                            // A known CMP can be recognised and still fail to clear the banner (Tesco's OneTrust is one):
+                                            // discovery then waits and only steps in if the banner is still on screen and nothing handled it.
+                                            const engineSawCMP = !!(ConsentEngine.singleton && ConsentEngine.singleton.triedCMPs.size > 0);
+                                            if (window === window.parent) {
                                                 runDiscovery({
                                                     host: urlObj.hostname,
                                                     consentTypes,
                                                     generalSettings,
-                                                    onHandled: handledCallback
+                                                    onHandled: handledCallback,
+                                                    engineSawCMP,
+                                                    wasHandled: () => handledAny
                                                 }).catch((e) => console.error("Discovery failed:", e));
                                             }
                                         }
