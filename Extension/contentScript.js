@@ -47,14 +47,12 @@ async function contentScriptRunner() {
                                     ConsentEngine.topFrameUrl = url;
             
                                     chrome.runtime.sendMessage("Searching");
-                                    let handledAny = false;
                                     const handledCallback = (evt)=>{
                                         let result = {
                                             "handled": evt.handled
                                         };
     
                                         if(evt.handled) {
-                                            handledAny = true;
                                             result.cmp = evt.cmpName;
                                             result.clicks = evt.clicks;
                                             result.url = url;
@@ -62,6 +60,11 @@ async function contentScriptRunner() {
                                             result.consentTypes = consentTypes;
         
                                             chrome.runtime.sendMessage("HandledCMP|"+JSON.stringify(result));
+                                            // "Handled" only means the rule ran: if its banner is still on screen afterwards, discovery takes over.
+                                            if (window === window.parent) {
+                                                runDiscovery({ host: urlObj.hostname, consentTypes, generalSettings, onHandled: handledCallback, engineSawCMP: true })
+                                                    .catch((e) => console.error("Discovery failed:", e));
+                                            }
                                         } else {
                                             chrome.runtime.sendMessage(evt.error ? "CMPError" : "NothingFound");
                                             // A known CMP can be recognised and still fail to clear the banner (Tesco's OneTrust is one):
@@ -73,8 +76,7 @@ async function contentScriptRunner() {
                                                     consentTypes,
                                                     generalSettings,
                                                     onHandled: handledCallback,
-                                                    engineSawCMP,
-                                                    wasHandled: () => handledAny
+                                                    engineSawCMP
                                                 }).catch((e) => console.error("Discovery failed:", e));
                                             }
                                         }

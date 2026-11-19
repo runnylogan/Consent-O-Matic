@@ -1,6 +1,6 @@
 {
   "name": "consent-o-matic",
-  "version": "1.2.14",
+  "version": "1.2.15",
   "description": "A browser extension that tries to fill out GDPR consent popups for you",
   "license": "MIT",
   "repository": {

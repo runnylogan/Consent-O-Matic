@@ -131,19 +131,21 @@ export async function startTeach(ctx) {
 export async function runDiscovery(ctx) {
     const { host, generalSettings } = ctx;
     if (started) return;
-    if (generalSettings && generalSettings.discoveryEnabled === false) return;
+    if (generalSettings && generalSettings.discoveryEnabled === false) { console.info("Consent-O-Matic discovery: switched off in settings"); return; }
 
     const dismissed = (await getDismissed())[host];
-    if (dismissed && Date.now() - dismissed < DISMISS_MS) return;
+    if (dismissed && Date.now() - dismissed < DISMISS_MS) {
+        console.info("Consent-O-Matic discovery: you dismissed " + host + " " + Math.round((Date.now() - dismissed) / 3600000) + "h ago; staying quiet until " + new Date(dismissed + DISMISS_MS).toLocaleString());
+        return;
+    }
 
     started = true;
-    if (ctx.engineSawCMP) {
-        // The engine recognised a CMP but ended with nothing handled: give it time, then check the banner is still there.
-        await new Promise((r) => setTimeout(r, 4000));
-        if (ctx.wasHandled && ctx.wasHandled()) { started = false; return; }
-    }
+    console.info("Consent-O-Matic discovery: started on " + host + (ctx.engineSawCMP ? " (a known rule ran first)" : ""));
+    // A known rule ran first: give it time to clear its banner, then look for one that is still showing.
+    if (ctx.engineSawCMP) await new Promise((r) => setTimeout(r, 4000));
     let result = await waitForCandidate();
-    if (!result) return; // no banner on this page: say nothing
+    if (!result) { console.info("Consent-O-Matic discovery: no banner showing, nothing to do"); return; } // say nothing on the page
+    console.info("Consent-O-Matic discovery: banner found" + (result.needsOptions ? " with a more-options control" : ""));
 
     // Came here from a "more options" link on another page: save that page's opener rule together with this one.
     const pending = await takePending();
