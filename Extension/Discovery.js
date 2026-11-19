@@ -179,7 +179,8 @@ const escapeRegExp = (t) => String(t).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Generated rules only apply on the site they were made for: the selectors come from one page and must not fire elsewhere. */
 function hostMatcher(hostname) {
-    return { type: "url", regexp: true, url: ["^[a-z-]+://" + escapeRegExp(hostname) + "(:\\d+)?([/?#]|$)"] };
+    // The engine matches against the page's host alone (no scheme), so the scheme part has to be optional.
+    return { type: "url", regexp: true, url: ["^(?:[a-z-]+://)?" + escapeRegExp(hostname) + "(:\\d+)?([/?#]|$)"] };
 }
 
 /** presentMatcher/showingMatcher target for a banner; generic selectors get a text filter so they only match cookie banners. */

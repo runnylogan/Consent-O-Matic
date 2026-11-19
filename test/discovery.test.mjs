@@ -406,3 +406,13 @@ test("a fixed banner with unremarkable ids is found through its accept/reject bu
         <input type="checkbox" id="c1" aria-label="Analytics"></div>`);
     assert.deepEqual(classifyToggles(d2.getElementById("p")).map(t => t.el.id), ["c1"]);
 });
+
+test("generated host matcher matches the engine's scheme-less host and nothing else", () => {
+    const doc = load(`<div id="b" style="position:fixed"><p>We use cookies on this site.</p><button>Accept all</button><button>Reject all</button></div>`);
+    const found = discover(doc, "www.tesco.com");
+    const re = new RegExp(found.rule[found.name].detectors[0].presentMatcher[0].url[0]);
+    assert.ok(re.test("www.tesco.com"));
+    assert.ok(re.test("https://www.tesco.com/groceries"));
+    assert.ok(!re.test("www.tesco.com.evil.example"));
+    assert.ok(!re.test("shop.tesco.com"));
+});
