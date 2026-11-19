@@ -8,6 +8,8 @@ let started = false;
 
 const DISMISS_KEY = "discoveryDismissed";
 const DISMISS_MS = 7 * 24 * 3600 * 1000;
+// Testing build: "Not now" is not remembered. Set to true to bring back the week-long quiet period.
+const REMEMBER_NOT_NOW = false;
 
 // A "Not now" lasts a week, but a new extension version starts fresh so a fix is not hidden behind an old dismissal.
 function getDismissed() {
@@ -25,6 +27,7 @@ async function forgetDismissal(host) {
 }
 
 async function dismissHost(host) {
+    if (!REMEMBER_NOT_NOW) return;
     const d = await getDismissed();
     d[host] = Date.now();
     await new Promise((resolve) => chrome.storage.local.set({ [DISMISS_KEY]: d }, resolve));
@@ -146,7 +149,7 @@ export async function runDiscovery(ctx) {
     if (generalSettings && generalSettings.discoveryEnabled === false) { console.info("Consent-O-Matic discovery: switched off in settings"); return; }
 
     const dismissed = (await getDismissed())[host];
-    if (dismissed && Date.now() - dismissed < DISMISS_MS) {
+    if (REMEMBER_NOT_NOW && dismissed && Date.now() - dismissed < DISMISS_MS) {
         console.info("Consent-O-Matic discovery: you dismissed " + host + " " + Math.round((Date.now() - dismissed) / 3600000) + "h ago; staying quiet until " + new Date(dismissed + DISMISS_MS).toLocaleString());
         return;
     }
