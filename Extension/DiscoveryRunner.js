@@ -157,7 +157,15 @@ export async function runDiscovery(ctx) {
     started = true;
     console.info("Consent-O-Matic discovery: started on " + host + (ctx.engineSawCMP ? " (a known rule ran first)" : ""));
     // A known rule ran first: give it time to clear its banner, then look for one that is still showing.
-    if (ctx.engineSawCMP) await new Promise((r) => setTimeout(r, 4000));
+    if (ctx.engineSawCMP) {
+        await new Promise((r) => setTimeout(r, 4000));
+        // Its banner is gone (or never showed): the known rule did its job, and whatever keyword-bearing widget is left
+        // on the page (a "cookie settings" button, a footer) is not a banner to learn.
+        if (ctx.knownBannerShowing && !ctx.knownBannerShowing()) {
+            console.info("Consent-O-Matic discovery: the known rule's banner is no longer showing, nothing to do");
+            return;
+        }
+    }
     let result = await waitForCandidate();
     if (!result) { console.info("Consent-O-Matic discovery: no banner showing, nothing to do"); return; } // say nothing on the page
     console.info("Consent-O-Matic discovery: banner found" + (result.needsOptions ? " with a more-options control" : ""));

@@ -59,6 +59,13 @@ async function contentScriptRunner() {
                                     ConsentEngine.topFrameUrl = url;
             
                                     chrome.runtime.sendMessage("Searching");
+                                    // Is a banner that a known rule recognised still on screen? A rule that ran, or a CMP that was
+                                    // present but never showed (consent already given), leaves nothing for discovery to do.
+                                    const knownBannerShowing = () => {
+                                        const eng = ConsentEngine.singleton;
+                                        if (!eng) return false;
+                                        try { return eng.cmps.some((c) => eng.triedCMPs.has(c.name) && c.isShowing()); } catch (e) { return false; }
+                                    };
                                     const handledCallback = (evt)=>{
                                         let result = {
                                             "handled": evt.handled
@@ -75,7 +82,7 @@ async function contentScriptRunner() {
                                             chrome.runtime.sendMessage("HandledCMP|"+JSON.stringify(result));
                                             // "Handled" only means the rule ran: if its banner is still on screen afterwards, discovery takes over.
                                             if (window === window.parent) {
-                                                runDiscovery({ host: urlObj.hostname, consentTypes, generalSettings, onHandled: handledCallback, engineSawCMP: true })
+                                                runDiscovery({ host: urlObj.hostname, consentTypes, generalSettings, onHandled: handledCallback, engineSawCMP: true, knownBannerShowing })
                                                     .catch((e) => console.error("Discovery failed:", e));
                                             }
                                         } else {
@@ -89,7 +96,8 @@ async function contentScriptRunner() {
                                                     consentTypes,
                                                     generalSettings,
                                                     onHandled: handledCallback,
-                                                    engineSawCMP
+                                                    engineSawCMP,
+                                                    knownBannerShowing
                                                 }).catch((e) => console.error("Discovery failed:", e));
                                             }
                                         }
